@@ -60,8 +60,17 @@ keinem erreichbaren Codepfad gelesene Babylon-Standardwerte (KTX2-Decoder,
 EXR-Loader, Snippet-Server) sind einzeln und exakt freigegeben; jede andere
 externe URL lässt den Build fehlschlagen.
 
-## Verhältnis zum übrigen Repository
+## Vercel-Vorschau
 
-Dieses Verzeichnis ist ein eigenständiges Projekt mit eigener Toolchain. Es
-teilt keine Abhängigkeiten mit der Next.js/Remotion-Anwendung im
-Wurzelverzeichnis — ein Playable muss autark sein.
+Vercel baut dieses Repository als statische Vite-Anwendung (`vercel.json`:
+`npm run build` → `dist/`). Der Typecheck ist Teil des Build-Befehls, ein
+Typfehler lässt das Deployment also fehlschlagen statt still durchzurutschen.
+
+Die Vorschau ist ein Testkanal, **nicht** die Auslieferung: für YouTube
+Playables zählt allein das ZIP aus `npm run youtube:build`.
+
+## Herkunft
+
+Das Projekt entstand im Repository `harisz-commits/Video-push` unter
+`games/last-stand-zombie-front/` und wurde mit seiner Historie hierher
+ausgegliedert, damit es eine eigene Deployment-Pipeline bekommt.
