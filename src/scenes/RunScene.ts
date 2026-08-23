@@ -4,17 +4,19 @@ import { DirectionalLight } from '@babylonjs/core/Lights/directionalLight';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { Color3, Color4 } from '@babylonjs/core/Maths/math.color';
 import { GameScene } from './GameScene';
-import type { SceneId } from '../core/Types';
+import type { RunResult, SceneId } from '../core/Types';
 import { RunCamera } from './playfield/RunCamera';
 import { TrackScenery } from './playfield/TrackScenery';
-import { SquadMarker } from './playfield/SquadMarker';
+import { CrowdRenderer } from './playfield/CrowdRenderer';
+import { GateRenderer } from './playfield/GateRenderer';
 import { RunKinematics } from '../run/RunKinematics';
+import { GateSystem } from '../run/GateSystem';
+import { ArmyManager } from '../army/ArmyManager';
+import { FormationLayout } from '../army/FormationSystem';
 import { HUD } from '../ui/HUD';
 import { DebugOverlay } from '../ui/DebugOverlay';
-import { button } from '../ui/dom';
-import { UiLayer } from '../ui/dom';
-import { ARMY, RENDER, RUN } from '../config/gameBalance';
-import { getTier } from '../config/unitTiers';
+import { UiLayer, button } from '../ui/dom';
+import { RENDER, RUN } from '../config/gameBalance';
 import { createSeed } from '../util/Random';
 import { clamp } from '../util/math';
 import { IS_DEV } from '../core/Config';
@@ -22,33 +24,39 @@ import { IS_DEV } from '../core/Config';
 /**
  * Die Run-Szene.
  *
- * PHASE 1 — Umfang bewusst begrenzt: automatische Vorwaertsbewegung,
- * Lateralsteuerung, Verfolgerkamera, scrollende Kulisse, HUD-Geruest.
- * Es gibt noch keine Armee, keine Gates, keine Gegner und keinen
- * RunDirector; diese haengen sich ab Phase 2 an dieselben Stellen:
+ * PHASE 2 — Armee, Formation und Gates stehen: die Truppe wächst und
+ * schrumpft durch Torentscheidungen, wird als Thin-Instance-Crowd gezeichnet
+ * und die Runde endet, wenn nichts mehr übrig ist.
  *
- *   update()        → RunDirector.tick(), ArmyManager, CombatSystem
- *   beforeRender()  → Crowd-Renderer statt SquadMarker
- *   Sektorlogik     → SectorGenerator statt fester Distanzschwelle
+ * Noch offen und hier anzuknüpfen:
+ *   update()   → Gegner, Kampf (Phase 4); RunDirector statt fester
+ *                Distanzschwelle für Sektoren (Phase 5)
+ *   Checkpoint → Promotion in das nächste Tier (Phase 3)
  */
 export class RunScene extends GameScene {
   readonly id: SceneId = 'run';
 
   private camera: RunCamera | null = null;
   private scenery: TrackScenery | null = null;
-  private squad: SquadMarker | null = null;
+  private crowd: CrowdRenderer | null = null;
+  private gateRenderer: GateRenderer | null = null;
   private hud: HUD | null = null;
   private debug: DebugOverlay | null = null;
+
   private readonly kinematics = new RunKinematics();
+  private readonly formation = new FormationLayout();
+  private army!: ArmyManager;
+  private gates!: GateSystem;
+
   private elapsed = 0;
   private sectorIndex = 0;
+  private finished = false;
 
   enter(): void {
     const scene = new Scene(this.ctx.engine);
     scene.clearColor = new Color4(0.05, 0.07, 0.09, 1);
     // Weniger Arbeit pro Frame: es gibt in dieser Szene nichts anzuklicken.
     scene.skipPointerMovePicking = true;
-    scene.autoClearDepthAndStencil = true;
     scene.fogMode = Scene.FOGMODE_LINEAR;
     scene.fogStart = RENDER.fogStart;
     scene.fogEnd = RENDER.fogEnd;
@@ -66,61 +74,83 @@ export class RunScene extends GameScene {
 
     this.camera = new RunCamera(scene);
     this.scenery = new TrackScenery(scene);
-    this.squad = new SquadMarker(scene, this.ctx.state.requireSave().progress.highestTierIndex);
+    this.crowd = new CrowdRenderer(scene);
+    this.gateRenderer = new GateRenderer(scene);
 
+    const seed = createSeed();
+    this.army = new ArmyManager(this.ctx.bus);
+    this.gates = new GateSystem(seed);
     this.kinematics.reset();
     this.elapsed = 0;
     this.sectorIndex = 0;
+    this.finished = false;
     this.camera.snapTo(0, 0);
 
     this.ctx.input.reset();
     this.ctx.input.attach();
     this.onExit(() => this.ctx.input.detach());
 
-    this.hud = new HUD(this.ctx.uiRoot);
-    this.onExit(() => this.hud?.dispose());
+    // Die Aufraeumer halten bewusst LOKALE Referenzen, keine Felder: wuerde
+    // exit() ein Feld vor dem Aufraeumen nullen, liefe der Closure ins Leere
+    // und das UI bliebe im DOM stehen.
+    const hud = new HUD(this.ctx.uiRoot);
+    this.hud = hud;
+    this.onExit(() => hud.dispose());
 
     if (DebugOverlay.isEnabled(IS_DEV)) {
-      this.debug = new DebugOverlay(this.ctx.uiRoot);
-      this.onExit(() => this.debug?.dispose());
+      const debug = new DebugOverlay(this.ctx.uiRoot);
+      this.debug = debug;
+      this.onExit(() => debug.dispose());
     }
 
-    // Vorlaeufiger Abbruchknopf, bis es echte Endbedingungen gibt.
+    // Vorläufiger Abbruchknopf, bis Sektoren ein echtes Rundenende setzen.
     const controls = new UiLayer(this.ctx.uiRoot, 'run-controls');
-    controls.add(button('End run', () => this.finishRun(), 'ghost'));
+    controls.add(button('End run', () => this.finishRun(false), 'ghost'));
     this.onExit(() => controls.dispose());
 
-    this.ctx.bus.emit('run:started', {
-      mode: this.ctx.state.mode,
-      seed: createSeed(),
-    });
+    this.ctx.bus.emit('run:started', { mode: this.ctx.state.mode, seed });
   }
 
   override update(dt: number): void {
+    if (this.finished) return;
+
     this.elapsed += dt;
     this.kinematics.update(this.ctx.input.lateral, dt);
     this.scenery?.update(this.kinematics.distance);
-    // Die Kamera laeuft im Simulationstakt mit: ihre Glaettung haengt damit
-    // nicht an der Framerate, und gerenderte Frames finden sie fertig vor.
     this.camera?.follow(this.kinematics.x, this.kinematics.distance, dt);
+
+    this.gates.update(this.kinematics.distance, this.kinematics.x, (effect) =>
+      this.army.applyGate(effect),
+    );
 
     const sector = Math.floor(this.kinematics.distance / RUN.sectorLengthMeters);
     if (sector !== this.sectorIndex) {
       this.sectorIndex = sector;
-      // Ab Phase 5 uebernimmt hier der RunDirector: Sektorwechsel,
+      // Ab Phase 5 übernimmt hier der RunDirector: Sektorwechsel,
       // Checkpoint-Auswahl, Promotion.
+    }
+
+    if (this.army.defeated) {
+      this.finishRun(false);
+      return;
     }
 
     this.ctx.bus.emit('run:distance', { meters: this.kinematics.distance });
   }
 
   override beforeRender(_alpha: number): void {
-    this.squad?.update(
+    const army = this.army.current;
+
+    this.crowd?.update(
+      this.formation,
+      army.displayCount,
+      army.tierIndex,
       this.kinematics.x,
       this.kinematics.distance,
       this.kinematics.lateralVelocity,
       this.elapsed,
     );
+    this.gateRenderer?.sync(this.gates.active);
 
     const progress = clamp(
       (this.kinematics.distance % RUN.sectorLengthMeters) / RUN.sectorLengthMeters,
@@ -128,9 +158,9 @@ export class RunScene extends GameScene {
       1,
     );
     this.hud?.render({
-      tierName: getTier(this.ctx.state.requireSave().progress.highestTierIndex).name,
-      displayCount: 6,
-      combatPower: ARMY.startCombatPower,
+      tierName: this.army.tierName,
+      displayCount: army.displayCount,
+      combatPower: army.combatPower,
       sectorProgress: progress,
       sectorIndex: this.sectorIndex,
       elapsedSeconds: this.elapsed,
@@ -144,28 +174,37 @@ export class RunScene extends GameScene {
   }
 
   override exit(): void {
+    // Renderer zuerst: sie geben Texturen und Material-Caches frei, die die
+    // Babylon-Szene allein nicht kennt.
     this.scenery?.dispose();
+    this.crowd?.dispose();
+    this.gateRenderer?.dispose();
+    // Dann die in enter() registrierten Aufraeumer und die Szene selbst …
+    super.exit();
+    // … und erst danach die Felder leeren.
     this.scenery = null;
-    this.squad?.dispose();
-    this.squad = null;
+    this.crowd = null;
+    this.gateRenderer = null;
     this.camera = null;
     this.hud = null;
     this.debug = null;
-    super.exit();
   }
 
-  /** Platzhalter-Rundenende. Ab Phase 5 kommt das Ergebnis vom RunDirector. */
-  private finishRun(): void {
-    const result = {
+  /** Ab Phase 5 liefert der RunDirector das Ergebnis; bis dahin von Hand. */
+  private finishRun(victory: boolean): void {
+    if (this.finished) return;
+    this.finished = true;
+
+    const result: RunResult = {
       mode: this.ctx.state.mode,
-      victory: false,
-      score: Math.round(this.kinematics.distance * 10),
+      victory,
+      score: Math.round(this.kinematics.distance * 10 + this.army.peakCombatPower * 5),
       stats: {
         sectorsCleared: this.sectorIndex,
         kills: 0,
         bossesKilled: 0,
-        peakTierIndex: 0,
-        peakCombatPower: ARMY.startCombatPower,
+        peakTierIndex: this.army.current.tierIndex,
+        peakCombatPower: this.army.peakCombatPower,
         coinsEarned: 0,
         durationSeconds: this.elapsed,
       },

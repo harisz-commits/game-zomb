@@ -4,7 +4,7 @@
 > technische Übersetzung davon: Architektur, Datenmodelle, Reihenfolge, Risiken,
 > Annahmen. Es wird pro Phase fortgeschrieben.
 
-Stand: Phase 1 abgeschlossen. Phasen 2–9 offen.
+Stand: Phasen 1 und 2 abgeschlossen. Phasen 3–9 offen.
 
 ---
 
@@ -179,7 +179,7 @@ Log-Warnung (verhindert korrupte Zustände).
 | Phase | Inhalt | Status |
 |---|---|---|
 | 1 | Setup, PlatformService, Szenen-Gerüst, Kamera + Lane-Prototyp | **fertig** |
-| 2 | Auto-Vorwärtsbewegung, Lateral-Steuerung, Crowd-Instancing, erste Gates | offen |
+| 2 | Auto-Vorwärtsbewegung, Lateral-Steuerung, Crowd-Instancing, erste Gates | **fertig** |
 | 3 | CombatPower, Tier-System, Promotion, Overflow, HUD-Anbindung | offen |
 | 4 | Zombie-Archetypen, aggregiertes Kampfsystem, Hit-Feedback, Boss-Prototyp | offen |
 | 5 | Sektoren, RunDirector, Supply Drops, Hazards, Checkpoints, Results | offen |
@@ -280,3 +280,62 @@ gehört an den Anfang von Phase 2.
 Keine Armee, keine Gates, keine Gegner, kein Kampf, keine Sektoren, kein
 Endlosmodus, keine Meta-Upgrades, kein Audio. Der Ergebnisbildschirm zeigt
 Platzhalterwerte, und die Runde endet nur über den Knopf „End run".
+
+
+---
+
+## 8. Phase 2 — Ergebnis
+
+Die Armee ist echt: Combat Power, abgeleiteter Display Count, Formation,
+Thin-Instance-Crowd und Gates mit Konsequenz. Eine Runde endet, wenn nichts
+mehr übrig ist.
+
+### Gemessene Ergebnisse
+
+| Kennzahl | Wert | Bewertung |
+|---|---|---|
+| Draw Calls (mit Crowd + 3 Toren) | 14–16 | Budget ≤ 30 |
+| davon die gesamte Armee | **1** | unabhängig von 6 oder 140 Soldaten |
+| Frame-Zeit | 0,7–1,0 ms | nicht GPU-gebunden |
+| Tests | 73 grün | — |
+
+### Wachstumskurve (Median über 40 Seeds, gutes Spiel)
+
+| Tore | Zeit | Combat Power |
+|---|---|---|
+| 10 | 0:55 | 372 |
+| 20 | 1:46 | 2.132 |
+| 30 | 2:37 | 10.434 |
+| 40 | 3:28 | 33.407 |
+
+Die Beförderungsschwelle zu Tier 2 liegt bei 1.200 und wird nach etwa 1:45
+erreicht — die erste Promotion fällt damit mitten in die Runde, nicht an ihr
+Ende. Als Test verankert (`tests/GateBalance.test.ts`), damit spätere
+Balance-Änderungen diese Taktung nicht unbemerkt zerstören.
+
+### Zwei Korrekturen an früheren Annahmen
+
+1. **Strafen sind jetzt proportional statt fest.** Ein „−20" beendet bei 13
+   Soldaten die Runde und ist bei 10.000 nicht mehr messbar. Zu einer Kurve,
+   die sich alle paar Tore verdoppelt, passen nur Faktoren.
+2. **Additive Tore zählen in Einheiten des aktuellen Tiers.** „+10" heißt
+   zehn Soldaten der Sorte, die gerade marschiert — sonst wäre jedes
+   additive Tor ab Tier 2 wertlos.
+
+### Gefundene und behobene Fehler
+
+- **UI-Leck:** `exit()` hat Felder genullt, BEVOR die registrierten
+  Aufräumer liefen — die Closures griffen ins Leere, HUD und Debug-Overlay
+  blieben nach jeder Runde im DOM. Betraf bereits Phase 1. Aufräumer halten
+  jetzt lokale Referenzen, die ein späteres Nullen nicht entwerten kann.
+- **Unsichtbare Tore:** `clone()` erbt `isVisible = false` vom Template.
+- **Kopfstehende Beschriftung:** `DynamicTexture.update(invertY)` stand auf
+  `false`. Bei Ziffern fällt das kaum auf — eine „2" wird dann aber als „5"
+  gelesen. Diagnostiziert mit Farbmarken an den Kanten der Zeichenfläche,
+  nachdem Textproben bei dieser Schriftgröße keine Aussage zuließen.
+
+### Was Phase 2 nicht enthält
+
+Keine Gegner, keinen Kampf, keine Promotion (Phase 3), keine Sektoren und
+keinen RunDirector (Phase 5). Die Runde endet weiterhin nur durch den Knopf
+oder durch eine vernichtete Armee.
