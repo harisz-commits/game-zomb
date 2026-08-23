@@ -533,3 +533,9 @@ body {
   color: var(--accent);
   margin-top: 6px;
 }
+
+.hud-kills {
+  font-size: 12px;
+  font-weight: 700;
+  color: #a7d98d;
+}

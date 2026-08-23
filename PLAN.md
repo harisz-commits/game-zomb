@@ -4,8 +4,8 @@
 > technische Übersetzung davon: Architektur, Datenmodelle, Reihenfolge, Risiken,
 > Annahmen. Es wird pro Phase fortgeschrieben.
 
-Stand: Phasen 1 bis 3 abgeschlossen, dazu das Kontrollpunkt-Zwischenspiel
-aus Phase 6 vorgezogen. Phasen 4, 5 und 7–9 offen.
+Stand: Phasen 1 bis 3 abgeschlossen, Phase 4 bis auf den Boss. Dazu das
+Kontrollpunkt-Zwischenspiel aus Phase 6 vorgezogen. Phasen 5 und 7–9 offen.
 
 ---
 
@@ -182,7 +182,7 @@ Log-Warnung (verhindert korrupte Zustände).
 | 1 | Setup, PlatformService, Szenen-Gerüst, Kamera + Lane-Prototyp | **fertig** |
 | 2 | Auto-Vorwärtsbewegung, Lateral-Steuerung, Crowd-Instancing, erste Gates | **fertig** |
 | 3 | CombatPower, Tier-System, Promotion, Overflow, HUD-Anbindung | **fertig** |
-| 4 | Zombie-Archetypen, aggregiertes Kampfsystem, Hit-Feedback, Boss-Prototyp | offen |
+| 4 | Zombie-Archetypen, aggregiertes Kampfsystem, Hit-Feedback, Boss-Prototyp | **teilweise** (Boss offen) |
 | 5 | Sektoren, RunDirector, Supply Drops, Hazards, Checkpoints, Results | offen |
 | 6 | Coins, UpgradeTree, Unlocks, Save/Load produktiv | offen |
 | 7 | EndlessDirector, Threat-Eskalation, Score | offen |
@@ -514,3 +514,78 @@ und eine Karte, die nichts tut, wäre eine Lüge. Die Felder stehen bereits in
 - **Wachstumskarten hätten Strafen verstärkt**: ein naiver Faktor auf
   `×0.5` hätte daraus eine Verbesserung gemacht. Zugewinn und Strafe werden
   getrennt verrechnet.
+
+
+---
+
+## 11. Phase 4 — Die Horde
+
+### Die eine Entscheidung, die alles bestimmt: relative Gegnerwerte
+
+Die Kampfkraft wächst über zwölf Stufen von 8 auf über eine Milliarde. Feste
+Gegnerwerte könnten dem unmöglich folgen — sie wären in Sekunde dreißig
+tödlich und in Minute drei nicht mehr messbar. Man müsste eine Gegnerkurve
+über zwölf Zehnerpotenzen pflegen, die exakt zur Torkurve passt, und jede
+Balance-Änderung an den Toren würde sie brechen.
+
+Deshalb bekommt eine Welle ihr Lebenspunkte-Budget als **Anteil der
+Armeestärke**. Ein Kampf kostet damit in jeder Spielphase ungefähr gleich
+viel, und die Zahlen bleiben von selbst im Rahmen. Der Preis ist ein
+Gummiband — hier gewollt: die Machtfantasie steckt im Wachstum der eigenen
+Zahl und in der Menge niedergemähter Zombies, nicht im Ausbleiben von
+Widerstand.
+
+Archetypen tragen deshalb **Verhältnisse** statt Absolutwerte: Ein Tank ist
+immer „achtmal so zäh wie ein Walker", unabhängig von der Spielphase.
+Geschwindigkeit bleibt absolut — ein Runner ist schnell, und das darf nicht
+davon abhängen, wie stark der Spieler gerade ist.
+
+### Wellen werden erst beim Eintreffen scharf gemacht
+
+Der erste Entwurf legte die Stärke einer Welle beim Erzeugen fest — bis zu
+200 Meter im Voraus, also zwanzig Sekunden. In dieser Zeit vervielfacht sich
+die Armee durch Tore, und die Welle traf hoffnungslos unterdimensioniert ein.
+Messbar: Bei gutem Spiel verlor die Armee über eine ganze Runde **exakt null**
+Kampfkraft.
+
+Jetzt tragen die Zombies nur Anteile, bis sie in Reichweite kommen; dort
+bekommen sie ihre echten Werte aus der Stärke von *jetzt*. Sichtbar ist der
+Unterschied nicht — Lebenspunkte stehen einem Zombie nicht an.
+
+### Gemessene Balance (25 Läufe je Zeile, Median)
+
+| | gutes Spiel | blindes Spiel |
+|---|---|---|
+| 60 s | 0 Tode, kein Verlust | 2/25 Tode |
+| 120 s | 0 Tode, kein Verlust | 10/25 Tode |
+| 180 s | 0 Tode, erste Verluste | 17/25 Tode |
+| 260 s | 0 Tode, ~15 % Verlust | 21/25 Tode |
+
+Die erste Minute gehört bewusst dem Ankommen. Ab etwa drei Minuten kostet
+der Kampf spürbar. Als Test verankert (`tests/CombatBalance.test.ts`).
+
+### Zwei Korrekturen aus dem Augenschein
+
+Beide Male stimmten die Zahlen und das Bild trotzdem nicht:
+
+1. **Der Kampf fand zu weit weg statt.** Mit 30 Metern Feuerreichweite
+   schmolzen die Wellen am Nebelrand — ein grüner Fleck in der Ferne, die
+   Horde blieb ein hochzählender Zähler. Jetzt 19 Meter, dafür beißen
+   Durchbrüche nur halb so hart. Das Geschehen liegt direkt vor der Truppe.
+2. **Die Horde kam als Kolonne statt als Horde.** Zombies zogen seitlich
+   nach; bei siebzehn Sekunden Anflug lief dabei die ganze Welle auf einer
+   Linie zusammen — und Ausweichen war wirkungslos, weil ohnehin jeder ankam.
+   Sie laufen jetzt stur geradeaus, gestreut über fast die ganze Fahrbahn.
+   Wie viele zubeißen, entscheidet allein das Lenken.
+
+### Leistung
+
+Ein Thin-Instance-Mesh je Archetyp: fünf Draw Calls für beliebig viele
+Zombies. Gesamt 19–21 von 30 Budget. Gleichzeitig sichtbar: 32–88 Zombies,
+Grenze 220.
+
+### Was noch fehlt
+
+Der Boss. Ebenso Spitter und Exploder — beide brauchen Projektile
+beziehungsweise Explosionen, die es noch nicht gibt. Mündungsfeuer und
+Treffereffekte sind Phase 9.

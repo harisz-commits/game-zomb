@@ -12,20 +12,17 @@
 
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';
 
-/**
- * Worauf eine Karte wirkt.
- *
- * `fireRate`, `damage` und `armor` fehlen bewusst: es gibt noch keine Gegner,
- * auf die sie wirken könnten. Eine Karte, die nichts tut, wäre eine Lüge.
- * Sie kommen mit dem Kampfsystem in Phase 4 dazu.
- */
+/** Worauf eine Karte wirkt. */
 export type UpgradeKind =
   | 'recruit'
   | 'gate-gain'
   | 'gate-shield'
   | 'speed'
   | 'steering'
-  | 'promotion';
+  | 'promotion'
+  | 'fire-rate'
+  | 'damage'
+  | 'armor';
 
 export const RARITIES: readonly Rarity[] = ['common', 'rare', 'epic', 'legendary'];
 
@@ -113,6 +110,27 @@ export const UPGRADE_KINDS: readonly UpgradeKindSpec[] = [
     magnitude: { common: 0.08, rare: 0.16, epic: 0.28, legendary: 0.45 },
     describe: (m) => `Promote ${percent(m)} sooner`,
   },
+  {
+    kind: 'fire-rate',
+    name: 'Rapid Fire',
+    weight: 95,
+    magnitude: { common: 0.08, rare: 0.18, epic: 0.35, legendary: 0.6 },
+    describe: (m) => `${percent(m)} faster fire rate`,
+  },
+  {
+    kind: 'damage',
+    name: 'Heavy Rounds',
+    weight: 95,
+    magnitude: { common: 0.12, rare: 0.25, epic: 0.45, legendary: 0.8 },
+    describe: (m) => `${percent(m)} more firepower`,
+  },
+  {
+    kind: 'armor',
+    name: 'Combat Plating',
+    weight: 80,
+    magnitude: { common: 0.1, rare: 0.2, epic: 0.34, legendary: 0.55 },
+    describe: (m) => `Take ${percent(m)} less damage`,
+  },
 ];
 
 /**
@@ -124,6 +142,10 @@ export const MODIFIER_CAPS = {
   promotionDiscount: 0.6,
   speed: 1.6,
   steering: 2.5,
+  /** Unter 10% eingehendem Schaden wäre die Horde reine Dekoration. */
+  armor: 0.9,
+  fireRate: 6,
+  damage: 8,
 } as const;
 
 export const DRAFT = {

@@ -21,13 +21,11 @@ export class RunModifiers {
   /** Anteil, um den Beförderungsschwellen sinken. */
   promotionDiscount = 0;
 
-  /**
-   * Kampfwerte. Noch ohne Wirkung — es gibt keine Gegner. Sie stehen hier,
-   * damit das Kampfsystem in Phase 4 nur lesen muss, statt das Modell
-   * umzubauen.
-   */
+  /** Faktor auf die Feuerrate. */
   fireRate = 1;
+  /** Faktor auf die Feuerkraft. */
   damage = 1;
+  /** Anteil, um den eingehender Schaden sinkt. */
   armor = 0;
 
   /** Was bereits gewählt wurde — für Anzeige und Stapel-Grenzen. */
@@ -76,6 +74,15 @@ export class RunModifiers {
           0,
           MODIFIER_CAPS.promotionDiscount,
         );
+        return 0;
+      case 'fire-rate':
+        this.fireRate = clamp(this.fireRate + magnitude, 1, MODIFIER_CAPS.fireRate);
+        return 0;
+      case 'damage':
+        this.damage = clamp(this.damage + magnitude, 1, MODIFIER_CAPS.damage);
+        return 0;
+      case 'armor':
+        this.armor = clamp(this.armor + magnitude, 0, MODIFIER_CAPS.armor);
         return 0;
     }
   }

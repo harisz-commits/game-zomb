@@ -11,6 +11,11 @@ import { CrowdRenderer } from './playfield/CrowdRenderer';
 import { GateRenderer } from './playfield/GateRenderer';
 import { RunKinematics } from '../run/RunKinematics';
 import { GateSystem } from '../run/GateSystem';
+import { EnemyManager } from '../enemies/EnemyManager';
+import { ZombieSpawner } from '../enemies/ZombieSpawner';
+import { resolveCombat } from '../combat/CombatSystem';
+import { HordeRenderer } from './playfield/HordeRenderer';
+import { threatLevelForSector } from '../config/levelCurves';
 import { ArmyManager } from '../army/ArmyManager';
 import { FormationLayout } from '../army/FormationSystem';
 import { RunModifiers } from '../run/RunModifiers';
@@ -59,6 +64,7 @@ export class RunScene extends GameScene {
   private scenery: TrackScenery | null = null;
   private crowd: CrowdRenderer | null = null;
   private gateRenderer: GateRenderer | null = null;
+  private horde: HordeRenderer | null = null;
   private hud: HUD | null = null;
   private debug: DebugOverlay | null = null;
 
@@ -68,6 +74,9 @@ export class RunScene extends GameScene {
   private army!: ArmyManager;
   private gates!: GateSystem;
   private draftRng!: Random;
+  private readonly enemies = new EnemyManager();
+  private spawner!: ZombieSpawner;
+  private kills = 0;
 
   private elapsed = 0;
   private sectorIndex = 0;
@@ -100,11 +109,15 @@ export class RunScene extends GameScene {
     this.scenery = new TrackScenery(scene);
     this.crowd = new CrowdRenderer(scene);
     this.gateRenderer = new GateRenderer(scene);
+    this.horde = new HordeRenderer(scene);
 
     const seed = createSeed();
     this.modifiers.reset();
     this.army = new ArmyManager(this.ctx.bus, startingPower(), this.modifiers);
     this.gates = new GateSystem(seed);
+    this.spawner = new ZombieSpawner(seed ^ 0x51ed270b);
+    this.enemies.reset();
+    this.kills = 0;
     // Eigener Zufallsstrom für die Karten: sonst verschöbe jede zusätzliche
     // Ziehung die gesamte Torfolge.
     this.draftRng = new Random(seed ^ 0x9e3779b9);
@@ -157,6 +170,8 @@ export class RunScene extends GameScene {
       this.army.applyGate(effect),
     );
 
+    this.updateCombat(dt);
+
     const sector = Math.floor(this.kinematics.distance / RUN.sectorLengthMeters);
     if (sector !== this.sectorIndex) {
       this.sectorIndex = sector;
@@ -179,6 +194,39 @@ export class RunScene extends GameScene {
    * einen Moment, in dem der Spieler nichts anderes zu tun hat.
    * Ab Phase 5 setzt der RunDirector diese Punkte bewusst statt alle 220 m.
    */
+  /**
+   * Wellen nachschieben, Horde bewegen, Schlagabtausch auflösen.
+   *
+   * Die Reihenfolge ist wichtig: erst laufen, dann schießen. Umgekehrt
+   * beträfe das Feuer Positionen, die es in diesem Bild nie gab.
+   */
+  private updateCombat(dt: number): void {
+    const threat = threatLevelForSector(this.sectorIndex);
+    for (const wave of this.spawner.due(this.kinematics.distance, threat)) {
+      this.enemies.spawn(wave);
+    }
+
+    this.enemies.update(dt, this.kinematics.x, this.kinematics.distance, this.army.combatPower);
+
+    const outcome = resolveCombat(
+      {
+        dt,
+        combatPower: this.army.combatPower,
+        tierIndex: this.army.current.tierIndex,
+        armyX: this.kinematics.x,
+        armyZ: this.kinematics.distance,
+        armyHalfWidth: this.formation.halfWidth,
+        fireRate: this.modifiers.fireRate,
+        damage: this.modifiers.damage,
+        armor: this.modifiers.armor,
+      },
+      this.enemies,
+    );
+
+    this.kills += outcome.kills;
+    if (outcome.powerLost > 0) this.army.damage(outcome.powerLost);
+  }
+
   private reachCheckpoint(): void {
     const promotedTo = this.army.tryPromote() > 0 ? this.army.tierName : null;
 
@@ -241,6 +289,7 @@ export class RunScene extends GameScene {
       this.elapsed,
     );
     this.gateRenderer?.sync(this.gates.active, this.kinematics.distance);
+    this.horde?.update(this.enemies.all, this.elapsed);
 
     const progress = clamp(
       (this.kinematics.distance % RUN.sectorLengthMeters) / RUN.sectorLengthMeters,
@@ -255,6 +304,7 @@ export class RunScene extends GameScene {
       sectorProgress: progress,
       sectorIndex: this.sectorIndex,
       elapsedSeconds: this.elapsed,
+      kills: this.kills,
     });
 
     this.debug?.update(this.ctx.engine, this.babylonScene);
@@ -277,6 +327,7 @@ export class RunScene extends GameScene {
     this.scenery = null;
     this.crowd = null;
     this.gateRenderer = null;
+    this.horde = null;
     this.camera = null;
     this.hud = null;
     this.debug = null;
@@ -293,7 +344,7 @@ export class RunScene extends GameScene {
       score: Math.round(this.kinematics.distance * 10 + this.army.peakCombatPower * 5),
       stats: {
         sectorsCleared: this.sectorIndex,
-        kills: 0,
+        kills: this.kills,
         bossesKilled: 0,
         peakTierIndex: this.army.peakTierIndex,
         peakCombatPower: this.army.peakCombatPower,

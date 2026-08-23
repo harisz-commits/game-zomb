@@ -84,12 +84,22 @@ describe('balance config', () => {
   });
 
   it('gives every enemy archetype positive stats', () => {
-    for (const enemy of Object.values(ENEMY_ARCHETYPES)) {
-      expect(enemy.hp).toBeGreaterThan(0);
-      expect(enemy.damage).toBeGreaterThan(0);
+    for (const enemy of ENEMY_ARCHETYPES) {
+      expect(enemy.hpFactor).toBeGreaterThan(0);
+      expect(enemy.damageFactor).toBeGreaterThan(0);
       expect(enemy.speed).toBeGreaterThan(0);
-      expect(enemy.weight).toBeGreaterThanOrEqual(0);
+      expect(enemy.weight).toBeGreaterThan(0);
+      expect(enemy.minThreat).toBeGreaterThanOrEqual(0);
     }
+  });
+
+  it('uses unique enemy ids', () => {
+    expect(new Set(ENEMY_ARCHETYPES.map((e) => e.id)).size).toBe(ENEMY_ARCHETYPES.length);
+  });
+
+  /** Der einfachste Gegner muss von Anfang an verfügbar sein. */
+  it('has a starter enemy at threat zero', () => {
+    expect(ENEMY_ARCHETYPES.some((e) => e.minThreat === 0)).toBe(true);
   });
 });
 

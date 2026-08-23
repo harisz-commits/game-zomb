@@ -12,6 +12,7 @@ export interface HudModel {
   sectorProgress: number;
   sectorIndex: number;
   elapsedSeconds: number;
+  kills: number;
 }
 
 /**
@@ -25,6 +26,7 @@ export class HUD {
   private readonly countLabel: HTMLElement;
   private readonly powerLabel: HTMLElement;
   private readonly timeLabel: HTMLElement;
+  private readonly killLabel: HTMLElement;
   private readonly sectorLabel: HTMLElement;
   private readonly progressFill: HTMLElement;
   private readonly overflowFill: HTMLElement;
@@ -52,7 +54,9 @@ export class HUD {
     const right = el('div', 'hud-block hud-right');
     this.powerLabel = el('div', 'hud-power', '');
     this.timeLabel = el('div', 'hud-time', '0:00');
+    this.killLabel = el('div', 'hud-kills', '');
     right.appendChild(this.powerLabel);
+    right.appendChild(this.killLabel);
     right.appendChild(this.timeLabel);
 
     top.appendChild(left);
@@ -87,6 +91,7 @@ export class HUD {
     this.countLabel.textContent = `×${formatCompact(model.unitCount)}`;
     this.powerLabel.textContent = `PWR ${formatCompact(model.combatPower)}`;
     this.timeLabel.textContent = formatDuration(model.elapsedSeconds);
+    this.killLabel.textContent = model.kills > 0 ? `☠ ${formatCompact(model.kills)}` : '';
     this.sectorLabel.textContent = `SECTOR ${model.sectorIndex + 1}`;
     this.progressFill.style.width = `${Math.round(model.sectorProgress * 100)}%`;
     this.overflowFill.style.width = `${Math.round(model.overflow * 100)}%`;
