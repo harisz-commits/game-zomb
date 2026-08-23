@@ -4,7 +4,7 @@
 > technische Übersetzung davon: Architektur, Datenmodelle, Reihenfolge, Risiken,
 > Annahmen. Es wird pro Phase fortgeschrieben.
 
-Stand: Phasen 1 und 2 abgeschlossen. Phasen 3–9 offen.
+Stand: Phasen 1 bis 3 abgeschlossen. Phasen 4–9 offen.
 
 ---
 
@@ -180,7 +180,7 @@ Log-Warnung (verhindert korrupte Zustände).
 |---|---|---|
 | 1 | Setup, PlatformService, Szenen-Gerüst, Kamera + Lane-Prototyp | **fertig** |
 | 2 | Auto-Vorwärtsbewegung, Lateral-Steuerung, Crowd-Instancing, erste Gates | **fertig** |
-| 3 | CombatPower, Tier-System, Promotion, Overflow, HUD-Anbindung | offen |
+| 3 | CombatPower, Tier-System, Promotion, Overflow, HUD-Anbindung | **fertig** |
 | 4 | Zombie-Archetypen, aggregiertes Kampfsystem, Hit-Feedback, Boss-Prototyp | offen |
 | 5 | Sektoren, RunDirector, Supply Drops, Hazards, Checkpoints, Results | offen |
 | 6 | Coins, UpgradeTree, Unlocks, Save/Load produktiv | offen |
@@ -339,3 +339,99 @@ Balance-Änderungen diese Taktung nicht unbemerkt zerstören.
 Keine Gegner, keinen Kampf, keine Promotion (Phase 3), keine Sektoren und
 keinen RunDirector (Phase 5). Die Runde endet weiterhin nur durch den Knopf
 oder durch eine vernichtete Armee.
+
+
+---
+
+## 9. Phase 3 — Beförderung, und Tore, die man lesen muss
+
+### Tore: Farbe verrät nichts mehr
+
+Alle Tore tragen dieselbe helle Beschilderung mit dunkler Schrift. Verriete
+die Farbe, ob eine Seite gut ist, müsste niemand die Zahl lesen — die
+Entscheidung wäre gratis. Drei Dinge tragen das:
+
+1. **Eine Farbe für alle.** Bewusst unbunt: Blau, Grün, Gold und Magenta sind
+   die Farben der Einheiten-Tiers. Ein blaues Tor neben blauen Riflemen wäre
+   keine neutrale Wahl, sondern nur schlecht lesbar.
+2. **Gemischte Schreibweisen.** Derselbe Effekt erscheint mal als `×0.5`, mal
+   als `−50%`. Die Aufschrift wird IMMER aus dem Wert abgeleitet, nie von Hand
+   geschrieben — sonst driften Anzeige und Wirkung auseinander und das Spiel
+   lügt.
+3. **Paare aus zwei schlechten Seiten** (22 %). Es gibt dann keine sichere
+   Wahl, nur eine weniger teure: `×0.05` gegen `−50%` ist genau die Frage, die
+   eine Sekunde kostet. Die ersten drei Tore einer Runde sind davon
+   ausgenommen — wer bestraft wird, bevor er die Regeln kennt, hört auf.
+
+Ein Tor kann die Runde nicht mehr beenden (Untergrenze 1). Es ist eine
+Entscheidung, kein Tod; gestorben wird ab Phase 4 an Gegnern.
+
+### Beförderung
+
+`combatPower` bleibt bei einer Beförderung **unverändert**. Es wird nichts
+eingetauscht, nur die Sorte Soldat gewechselt, in der dieselbe Stärke
+dargestellt wird. Restkraft kann dadurch gar nicht verloren gehen — sie
+erscheint als angefangene Einheit (`overflowProgress`) und hat im HUD einen
+eigenen Balken. Mehrere Stufen auf einmal sind möglich, wenn die Stärke reicht.
+
+Befördert wird nur am Kontrollpunkt (vorläufig die Sektorgrenze), nie beim
+Vorbeifahren an einem Tor: der Aufstieg braucht einen Moment, in dem der
+Spieler nichts anderes zu tun hat. Ein Banner benennt das neue Tier — nach der
+Beförderung stehen WENIGER Figuren auf dem Feld, und ohne diesen Moment liest
+sich der Aufstieg als Verlust.
+
+### Echte Truppenstärke vs. gezeichnete Figuren
+
+Bei einem Tier-Verhältnis von 100:1 sitzt die gezeichnete Truppe lange am
+Renderbudget fest, bevor die nächste Schwelle fällig ist. Deshalb sind es
+jetzt drei Zahlen statt zwei:
+
+| Feld | Bedeutung |
+|---|---|
+| `combatPower` | die mathematische Wahrheit |
+| `unitCount` | echte Einheiten des Tiers — **das zeigt das HUD** |
+| `displayCount` | tatsächlich gezeichnete Figuren, auf 140 gedeckelt |
+
+Ohne diese Trennung sähe der Spieler zwischen 140 und 1.200 Einheiten
+Stillstand, wo sich seine Stärke verachtfacht.
+
+### Wachstumskurve nach der Neuabstimmung
+
+| Tore | Zeit | Power (Median) | Tier |
+|---|---|---|---|
+| 10 | 0:55 | 447 | 0 |
+| 20 | 1:46 | 6.164 | 1 |
+| 30 | 2:37 | 44.923 | 1–2 |
+| 40 | 3:28 | 755.369 | 2 |
+| 50 | 4:19 | 5.453.497 | 2–3 |
+
+Erste Beförderung nach etwa 1:30. Eine lange reguläre Runde endet bei Tier 2–3
+von 5 — die oberen Stufen bleiben dem Endlosmodus. Beides ist als Test
+verankert; ein erster Abstimmungsversuch erreichte Tier 4 nach 4:19 und hätte
+die Leiter in einer Runde verbraucht.
+
+### Gefundene und behobene Fehler
+
+- **Beförderung war unsichtbar.** Das Material der Truppe war eingefroren, der
+  Farbwechsel ging daran verloren. Per Pixelmessung nachgewiesen: Militia und
+  Veterans hatten exakt dieselbe Farbe (139,154,174).
+- **Truppe wuchs durch die Leitplanke.** Die Formation wurde gestaucht, ihr
+  Anker durfte aber weiter bis an den Fahrbahnrand. Der Anker ist jetzt an die
+  Truppenbreite gekoppelt.
+- **Formation quer über die Mittellinie.** Bei voller Breite stand die Armee
+  beim Passieren auf beiden Seiten und die Wahl war optisch nicht ablesbar.
+  Die Truppe wird jetzt nie breiter als eine Fahrbahnhälfte und wächst
+  stattdessen in die Länge.
+- **Truppe wuchs aus dem Bild.** Die Kamera weicht jetzt zurück und steigt,
+  wenn die Formation länger wird.
+
+### Werkzeug
+
+Mit aktivem Debug-Modus setzt `?debug=1&power=5000` die Startstärke. Ohne den
+Schalter gibt es keinen Weg dorthin. Späte Spielzustände sind damit in
+Sekunden erreichbar statt in Minuten — für Bosse ab Phase 4 dasselbe.
+
+### Was Phase 3 nicht enthält
+
+Keine Gegner, keinen Kampf, keine echten Sektortypen. Der Kontrollpunkt ist
+weiterhin nur die 220-Meter-Grenze; ab Phase 5 setzt ihn der RunDirector.

@@ -35,18 +35,26 @@ export class RunKinematics {
   }
 
   /**
-   * @param inputLateral normalisierte Eingabe in [-1, 1]
-   * @param dt Schrittweite in Sekunden
+   * @param inputLateral       normalisierte Eingabe in [-1, 1]
+   * @param dt                 Schrittweite in Sekunden
+   * @param formationHalfWidth halbe Breite der Truppe in Metern
    */
-  update(inputLateral: number, dt: number): void {
-    const targetX = clamp(inputLateral, -1, 1) * MOVEMENT.laneHalfWidth;
+  update(inputLateral: number, dt: number, formationHalfWidth = 0): void {
+    // Der Anker darf nur so weit an den Rand, dass die AUSSENSTE Reihe noch
+    // auf dem Asphalt steht. Ohne diese Kopplung wächst die Truppe durch die
+    // Leitplanke hindurch, sobald sie breiter wird.
+    const limit = Math.max(
+      0,
+      Math.min(MOVEMENT.laneHalfWidth, MOVEMENT.roadHalfWidth - formationHalfWidth - 0.4),
+    );
+    const targetX = clamp(inputLateral, -1, 1) * limit;
     this.desiredX = moveTowards(this.desiredX, targetX, MOVEMENT.lateralSpeed * dt);
 
     const previousX = this.x;
     this.x = clamp(
       damp(this.x, this.desiredX, MOVEMENT.lateralSmoothing, dt),
-      -MOVEMENT.laneHalfWidth,
-      MOVEMENT.laneHalfWidth,
+      -limit,
+      limit,
     );
     this.lateralVelocity = dt > 0 ? (this.x - previousX) / dt : 0;
 

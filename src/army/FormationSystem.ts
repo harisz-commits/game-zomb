@@ -1,4 +1,5 @@
 import { MOVEMENT } from '../config/gameBalance';
+import { clamp } from '../util/math';
 
 /**
  * Anordnung der sichtbaren Einheiten.
@@ -18,9 +19,8 @@ const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 /** Grundabstand zwischen zwei Einheiten in Metern. */
 const SPACING = 0.58;
 const X_SCALE = 0.62;
-const Z_SCALE = 1.3;
-/** Abstand, den die Formation zu den Fahrbahnrändern hält. */
-const EDGE_MARGIN = 0.5;
+const Z_SCALE = 1.0;
+
 
 export interface FormationSlot {
   x: number;
@@ -80,7 +80,7 @@ function buildSlots(count: number): FormationSlot[] {
 
   // Wie weit die Scheibe bei dieser Anzahl reichen würde …
   const rawHalfWidth = SPACING * Math.sqrt(count) * X_SCALE;
-  const allowed = MOVEMENT.laneHalfWidth - EDGE_MARGIN;
+  const allowed = MOVEMENT.formationMaxHalfWidth;
   // … und wie stark sie dafür quer gestaucht werden muss.
   const squeeze = rawHalfWidth > allowed ? allowed / rawHalfWidth : 1;
 
@@ -89,7 +89,13 @@ function buildSlots(count: number): FormationSlot[] {
     const radius = SPACING * Math.sqrt(i + 0.5);
     const angle = i * GOLDEN_ANGLE;
     slots[i] = {
-      x: Math.cos(angle) * radius * X_SCALE * squeeze + jitter(i, 1) * 0.12,
+      // Der Versatz kommt NACH dem Stauchen dazu und könnte die Grenze
+      // sonst um seinen eigenen Betrag überschreiten — daher hart begrenzt.
+      x: clamp(
+        Math.cos(angle) * radius * X_SCALE * squeeze + jitter(i, 1) * 0.12,
+        -allowed,
+        allowed,
+      ),
       z: Math.sin(angle) * radius * Z_SCALE + jitter(i, 2) * 0.16,
       phase: (jitter(i, 3) + 0.5) * Math.PI * 2,
     };

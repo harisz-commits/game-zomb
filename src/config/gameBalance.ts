@@ -15,6 +15,16 @@ export const MOVEMENT = {
   forwardSpeed: 9,
   /** Halbe Fahrbahnbreite in Metern; lateral bewegt sich die Armee in [-w, +w]. */
   laneHalfWidth: 4.2,
+  /** Halbe Breite des befahrbaren Asphalts — bis hierher reicht die Geometrie. */
+  roadHalfWidth: 5.8,
+  /**
+   * Breiter wird die Truppe nie, egal wie groß sie ist.
+   *
+   * Sie muss vollständig auf EINE Fahrbahnhälfte passen, sonst steht sie beim
+   * Passieren eines Tors auf beiden Seiten und die Wahl ist optisch nicht mehr
+   * ablesbar. Wächst die Armee darüber hinaus, wird sie länger statt breiter.
+   */
+  formationMaxHalfWidth: 2.6,
   /** Wie schnell die Formation der Eingabe folgt (Meter pro Sekunde). */
   lateralSpeed: 14,
   /** Glaettung der Eingabe: 0 = sofort, 1 = gar nicht. Pro Tick angewandt. */
@@ -43,6 +53,12 @@ export const CAMERA = {
   lateralFollow: 0.35,
   /** Weicher Nachlauf der Kamera pro Tick. */
   smoothing: 0.12,
+  /** Je Meter Truppenlänge weicht die Kamera so viele Meter zurück. */
+  depthPullback: 0.55,
+  /** … und steigt dabei um so viele Meter pro Meter Truppenlänge. */
+  depthLift: 0.22,
+  /** Der Rückzug ist träger als die Seitwärtsbewegung: er soll wirken, nicht auffallen. */
+  distanceSmoothing: 0.55,
   fovPortrait: 0.95,
   fovLandscape: 0.72,
 } as const;

@@ -13,7 +13,15 @@ export interface ArmyState {
   combatPower: number;
   /** Index in UNIT_TIERS. */
   tierIndex: number;
-  /** Abgeleitet, nur fuer die Darstellung. */
+  /**
+   * Tatsaechliche Zahl der Einheiten des aktuellen Tiers — ungedeckelt.
+   * Das ist die Zahl, die das HUD zeigt.
+   */
+  unitCount: number;
+  /**
+   * Wie viele Figuren wirklich gezeichnet werden. Durch das Renderbudget
+   * gedeckelt und deshalb oft KLEINER als `unitCount`.
+   */
   displayCount: number;
   /** Anteil [0,1) einer angefangenen Einheit des aktuellen Tiers. */
   overflowProgress: number;

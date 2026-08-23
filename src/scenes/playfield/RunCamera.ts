@@ -18,6 +18,7 @@ import { damp } from '../../util/math';
 export class RunCamera {
   readonly camera: TargetCamera;
   private readonly target = new Vector3(0, 0, 0);
+  private distance: number = CAMERA.distance;
 
   constructor(scene: Scene) {
     this.camera = new TargetCamera(
@@ -33,17 +34,28 @@ export class RunCamera {
 
   /** Setzt die Kamera ohne Nachlauf — beim Start einer Runde. */
   snapTo(x: number, z: number): void {
+    this.distance = CAMERA.distance;
     this.camera.position.set(x * CAMERA.lateralFollow, CAMERA.height, z - CAMERA.distance);
     this.updateTarget(x, z);
   }
 
-  follow(x: number, z: number, dt: number): void {
+  /**
+   * @param formationDepth Länge der Truppe in Metern. Die Kamera weicht
+   *   zurück, wenn die Armee wächst — sonst stehen die hinteren Reihen
+   *   irgendwann vor der Linse und verdecken die Strecke. Der Rückzug ist
+   *   geglättet, damit er sich als Machtgefühl liest und nicht als Ruckeln.
+   */
+  follow(x: number, z: number, dt: number, formationDepth = 0): void {
     const desiredX = x * CAMERA.lateralFollow;
     this.camera.position.x = damp(this.camera.position.x, desiredX, CAMERA.smoothing, dt);
+
+    const desiredDistance = CAMERA.distance + formationDepth * CAMERA.depthPullback;
+    this.distance = damp(this.distance, desiredDistance, CAMERA.distanceSmoothing, dt);
+
     // In Z gibt es keinen Nachlauf: die Armee darf der Kamera niemals
     // davonlaufen, sonst verliert der Spieler den Bezugspunkt.
-    this.camera.position.z = z - CAMERA.distance;
-    this.camera.position.y = CAMERA.height;
+    this.camera.position.z = z - this.distance;
+    this.camera.position.y = CAMERA.height + formationDepth * CAMERA.depthLift;
     this.updateTarget(x, z);
   }
 

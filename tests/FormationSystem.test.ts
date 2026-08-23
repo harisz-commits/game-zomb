@@ -10,11 +10,16 @@ describe('FormationLayout', () => {
     }
   });
 
-  it('keeps the whole formation on the road at every size', () => {
+  /**
+   * Die Truppe muss auf EINE Fahrbahnhälfte passen — sonst steht sie beim
+   * Passieren eines Tors auf beiden Seiten und die Wahl ist nicht mehr
+   * ablesbar.
+   */
+  it('never grows wider than one half of the road', () => {
     const layout = new FormationLayout();
     for (let count = 1; count <= DISPLAY_CAPS.alliesHard; count += 1) {
       for (const slot of layout.update(count)) {
-        expect(Math.abs(slot.x)).toBeLessThanOrEqual(MOVEMENT.laneHalfWidth);
+        expect(Math.abs(slot.x)).toBeLessThanOrEqual(MOVEMENT.formationMaxHalfWidth);
       }
     }
   });

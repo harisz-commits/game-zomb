@@ -1,36 +1,75 @@
 /**
  * Gates — der Motor des Wachstumsgefühls.
  *
- * Eine Gate-Passage muss eine ECHTE Entscheidung sein. Deshalb werden immer
- * zwei ungleiche Seiten gepaart: die stärkere Seite kostet Risiko oder liegt
- * ungünstig, die schwächere ist sicher. Zwei gleich gute Seiten wären nur
- * eine Formalität, zwei schlechte nur eine Strafe.
+ * Zwei bewusste Entwurfsentscheidungen machen die Torwahl zu einer echten
+ * Entscheidung statt zu einer Reflexbewegung:
+ *
+ * 1. **Alle Tore sehen gleich aus.** Keine Ampelfarben. Verriete die Farbe,
+ *    ob eine Seite gut ist, müsste niemand mehr die Zahl lesen — die
+ *    Entscheidung wäre gratis.
+ * 2. **Derselbe Effekt trägt unterschiedliche Schreibweisen.** „×0.5" und
+ *    „−50%" sind exakt dasselbe. Wer schnell wählen will, muss beide
+ *    Notationen im Kopf haben; „×0.05 oder −50%, was ist schlimmer?" ist
+ *    genau die Frage, die eine Sekunde kostet.
  */
 
 export type GateEffectKind = 'add' | 'multiply';
 
-/** Farbliche Lesart auf einen Blick — Grün gut, Rot schlecht. */
-export type GateTone = 'good' | 'great' | 'bad';
+/**
+ * Wie ein Effekt beschriftet wird. Die Beschriftung wird IMMER aus dem Wert
+ * abgeleitet, nie von Hand geschrieben — sonst driften Anzeige und Wirkung
+ * irgendwann auseinander und das Spiel lügt den Spieler an.
+ */
+export type GateNotation = 'factor' | 'percent' | 'flat';
 
 export interface GateEffect {
   kind: GateEffectKind;
-  /** Bei 'add' ein Summand in Basispunkten, bei 'multiply' ein Faktor. */
+  /** Bei 'add' ein Summand in Einheiten des aktuellen Tiers, sonst ein Faktor. */
   value: number;
-  label: string;
-  tone: GateTone;
+  notation: GateNotation;
   /** Relatives Gewicht in der Zufallsauswahl. */
   weight: number;
-  /** Grober Wert der Seite — nur zum Paaren, nicht für die Simulation. */
-  appeal: number;
 }
 
+/** Erzeugt die Aufschrift eines Tors aus seiner tatsächlichen Wirkung. */
+export function gateLabel(effect: GateEffect): string {
+  if (effect.kind === 'add') {
+    return effect.value >= 0 ? `+${effect.value}` : `−${Math.abs(effect.value)}`;
+  }
+  if (effect.notation === 'factor') {
+    return `×${effect.value}`;
+  }
+  const percent = Math.round((effect.value - 1) * 100);
+  return percent >= 0 ? `+${percent}%` : `−${Math.abs(percent)}%`;
+}
+
+/**
+ * Referenzstärke, an der beim Erzeugen abgeschätzt wird, wie stark ein
+ * additives Tor wirkt. Nur zum Paaren zweier Seiten — die Simulation rechnet
+ * immer mit der echten Armeestärke.
+ */
+const NOMINAL_POWER = 45;
+
+/** Grober Wirkungsfaktor eines Effekts, ausschließlich für die Paarung. */
+export function nominalFactor(effect: GateEffect): number {
+  if (effect.kind === 'multiply') return effect.value;
+  return Math.max(0, (NOMINAL_POWER + effect.value) / NOMINAL_POWER);
+}
+
+/**
+ * Dieselbe Wirkung erscheint absichtlich in beiden Schreibweisen — mal als
+ * Faktor, mal als Prozentangabe.
+ */
 export const POSITIVE_GATES: readonly GateEffect[] = [
-  { kind: 'add', value: 5, label: '+5', tone: 'good', weight: 100, appeal: 1 },
-  { kind: 'add', value: 10, label: '+10', tone: 'good', weight: 100, appeal: 2 },
-  { kind: 'add', value: 20, label: '+20', tone: 'good', weight: 70, appeal: 3 },
-  { kind: 'add', value: 35, label: '+35', tone: 'good', weight: 40, appeal: 4 },
-  { kind: 'multiply', value: 2, label: '×2', tone: 'great', weight: 45, appeal: 6 },
-  { kind: 'multiply', value: 3, label: '×3', tone: 'great', weight: 18, appeal: 8 },
+  { kind: 'add', value: 10, notation: 'flat', weight: 110 },
+  { kind: 'add', value: 25, notation: 'flat', weight: 80 },
+  { kind: 'add', value: 50, notation: 'flat', weight: 45 },
+  { kind: 'multiply', value: 1.5, notation: 'factor', weight: 30 },
+  { kind: 'multiply', value: 1.5, notation: 'percent', weight: 30 },
+  { kind: 'multiply', value: 2, notation: 'factor', weight: 15 },
+  { kind: 'multiply', value: 2, notation: 'percent', weight: 15 },
+  { kind: 'multiply', value: 3, notation: 'factor', weight: 4 },
+  { kind: 'multiply', value: 3, notation: 'percent', weight: 4 },
 ];
 
 /**
@@ -38,14 +77,32 @@ export const POSITIVE_GATES: readonly GateEffect[] = [
  *
  * Ein fester Abzug passt nicht zu einer Kurve, die sich alle paar Tore
  * verdoppelt: „−20" beendet bei 13 Soldaten die Runde und ist bei 10.000
- * nicht mehr messbar. Ein Faktor kostet dagegen in jeder Spielphase gleich
- * viel — er bleibt spürbar, ohne je aus dem Nichts zu töten.
+ * nicht mehr messbar. Ein Faktor kostet in jeder Spielphase gleich viel.
  */
 export const NEGATIVE_GATES: readonly GateEffect[] = [
-  { kind: 'multiply', value: 0.85, label: '−15%', tone: 'bad', weight: 100, appeal: -2 },
-  { kind: 'multiply', value: 0.7, label: '−30%', tone: 'bad', weight: 55, appeal: -4 },
-  { kind: 'multiply', value: 0.5, label: '÷2', tone: 'bad', weight: 22, appeal: -6 },
+  { kind: 'multiply', value: 0.8, notation: 'factor', weight: 90 },
+  { kind: 'multiply', value: 0.8, notation: 'percent', weight: 90 },
+  { kind: 'multiply', value: 0.6, notation: 'factor', weight: 60 },
+  { kind: 'multiply', value: 0.6, notation: 'percent', weight: 60 },
+  { kind: 'multiply', value: 0.35, notation: 'factor', weight: 28 },
+  { kind: 'multiply', value: 0.35, notation: 'percent', weight: 28 },
+  { kind: 'multiply', value: 0.05, notation: 'factor', weight: 10 },
+  { kind: 'multiply', value: 0.05, notation: 'percent', weight: 10 },
 ];
+
+/**
+ * Wie ein Torpaar zusammengesetzt wird.
+ *
+ * Die Falle-Variante (beide Seiten schlecht) ist der Grund, warum der Spieler
+ * jede Aufschrift lesen muss: Es gibt keine sichere Seite, nur eine weniger
+ * teure. Sie bleibt in der Minderheit, damit die Runde nicht zur Strafrunde
+ * wird.
+ */
+export const GATE_PAIRING = {
+  bothPositive: 0.42,
+  mixed: 0.36,
+  bothNegative: 0.22,
+} as const;
 
 export const GATE_LAYOUT = {
   /** Abstand zwischen zwei Gates in Metern. */
@@ -57,17 +114,23 @@ export const GATE_LAYOUT = {
   /** So weit hinter der Armee werden passierte Gates aufgeräumt. */
   cleanupMeters: 25,
   /**
-   * Anteil der Gates, bei denen beide Seiten positiv sind. Nur Strafen auf
-   * einer Seite würde als Bestrafung statt als Wahl gelesen.
+   * Die ersten Tore einer Runde sind nie eine Falle. Wer in den ersten
+   * Sekunden bestraft wird, ohne die Regeln zu kennen, hört auf.
    */
-  bothPositiveChance: 0.68,
+  safeGates: 3,
   /** Sichtbare Breite eines Torflügels in Metern. */
   panelWidth: 3.9,
   panelHeight: 2.6,
 } as const;
 
-export const GATE_TONE_COLORS: Readonly<Record<GateTone, [number, number, number]>> = {
-  good: [0.24, 0.72, 0.42],
-  great: [0.28, 0.6, 1],
-  bad: [0.82, 0.28, 0.24],
-};
+/**
+ * EINE Farbe für alle Tore. Siehe Kopf der Datei: die Farbe darf die Antwort
+ * nicht verraten.
+ *
+ * Helle Beschilderung mit dunkler Schrift, bewusst unbunt: Blau, Grün, Gold
+ * und Magenta sind bereits die Farben der Einheiten-Tiers. Ein blaues Tor
+ * neben blauen Riflemen wäre keine neutrale Wahl, sondern nur schlecht
+ * lesbar.
+ */
+export const GATE_COLOR: readonly [number, number, number] = [0.93, 0.94, 0.96];
+export const GATE_TEXT_COLOR = '#141a22';

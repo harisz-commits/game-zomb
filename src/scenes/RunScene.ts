@@ -16,10 +16,25 @@ import { FormationLayout } from '../army/FormationSystem';
 import { HUD } from '../ui/HUD';
 import { DebugOverlay } from '../ui/DebugOverlay';
 import { UiLayer, button } from '../ui/dom';
-import { RENDER, RUN } from '../config/gameBalance';
+import { ARMY, RENDER, RUN } from '../config/gameBalance';
 import { createSeed } from '../util/Random';
 import { clamp } from '../util/math';
 import { IS_DEV } from '../core/Config';
+
+/**
+ * Startstärke einer Runde.
+ *
+ * Mit aktivem Debug-Modus lässt sie sich per `?debug=1&power=5000` setzen.
+ * Ohne den Schalter gibt es keinen Weg dorthin — das ist eine QA-Hilfe, um
+ * späte Spielzustände (Beförderung, später Bosse) erreichbar zu machen,
+ * ohne jedes Mal Minuten zu fahren.
+ */
+function startingPower(): number {
+  if (!DebugOverlay.isEnabled(IS_DEV)) return ARMY.startCombatPower;
+  const raw = new URLSearchParams(window.location.search).get('power');
+  const parsed = raw === null ? Number.NaN : Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : ARMY.startCombatPower;
+}
 
 /**
  * Die Run-Szene.
@@ -78,7 +93,7 @@ export class RunScene extends GameScene {
     this.gateRenderer = new GateRenderer(scene);
 
     const seed = createSeed();
-    this.army = new ArmyManager(this.ctx.bus);
+    this.army = new ArmyManager(this.ctx.bus, startingPower());
     this.gates = new GateSystem(seed);
     this.kinematics.reset();
     this.elapsed = 0;
@@ -115,9 +130,12 @@ export class RunScene extends GameScene {
     if (this.finished) return;
 
     this.elapsed += dt;
-    this.kinematics.update(this.ctx.input.lateral, dt);
+    // Formation vor der Bewegung aktualisieren: ihre Breite begrenzt, wie
+    // weit der Anker an den Fahrbahnrand darf.
+    this.formation.update(this.army.displayCount);
+    this.kinematics.update(this.ctx.input.lateral, dt, this.formation.halfWidth);
     this.scenery?.update(this.kinematics.distance);
-    this.camera?.follow(this.kinematics.x, this.kinematics.distance, dt);
+    this.camera?.follow(this.kinematics.x, this.kinematics.distance, dt, this.formation.depth);
 
     this.gates.update(this.kinematics.distance, this.kinematics.x, (effect) =>
       this.army.applyGate(effect),
@@ -126,8 +144,7 @@ export class RunScene extends GameScene {
     const sector = Math.floor(this.kinematics.distance / RUN.sectorLengthMeters);
     if (sector !== this.sectorIndex) {
       this.sectorIndex = sector;
-      // Ab Phase 5 übernimmt hier der RunDirector: Sektorwechsel,
-      // Checkpoint-Auswahl, Promotion.
+      this.reachCheckpoint();
     }
 
     if (this.army.defeated) {
@@ -136,6 +153,21 @@ export class RunScene extends GameScene {
     }
 
     this.ctx.bus.emit('run:distance', { meters: this.kinematics.distance });
+  }
+
+  /**
+   * Sektorgrenze als vorläufiger Kontrollpunkt.
+   *
+   * Hier — und nur hier — wird befördert. Eine Beförderung mitten im
+   * Vorbeifahren an einem Tor liesse sich nicht inszenieren; sie braucht
+   * einen Moment, in dem der Spieler nichts anderes zu tun hat.
+   * Ab Phase 5 setzt der RunDirector diese Punkte bewusst statt alle 220 m.
+   */
+  private reachCheckpoint(): void {
+    const steps = this.army.tryPromote();
+    if (steps > 0) {
+      this.hud?.showPromotion(this.army.tierName, this.elapsed);
+    }
   }
 
   override beforeRender(_alpha: number): void {
@@ -150,7 +182,7 @@ export class RunScene extends GameScene {
       this.kinematics.lateralVelocity,
       this.elapsed,
     );
-    this.gateRenderer?.sync(this.gates.active);
+    this.gateRenderer?.sync(this.gates.active, this.kinematics.distance);
 
     const progress = clamp(
       (this.kinematics.distance % RUN.sectorLengthMeters) / RUN.sectorLengthMeters,
@@ -159,8 +191,9 @@ export class RunScene extends GameScene {
     );
     this.hud?.render({
       tierName: this.army.tierName,
-      displayCount: army.displayCount,
+      unitCount: army.unitCount,
       combatPower: army.combatPower,
+      overflow: army.overflowProgress,
       sectorProgress: progress,
       sectorIndex: this.sectorIndex,
       elapsedSeconds: this.elapsed,
@@ -203,7 +236,7 @@ export class RunScene extends GameScene {
         sectorsCleared: this.sectorIndex,
         kills: 0,
         bossesKilled: 0,
-        peakTierIndex: this.army.current.tierIndex,
+        peakTierIndex: this.army.peakTierIndex,
         peakCombatPower: this.army.peakCombatPower,
         coinsEarned: 0,
         durationSeconds: this.elapsed,

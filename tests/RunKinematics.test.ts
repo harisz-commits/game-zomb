@@ -56,6 +56,27 @@ describe('RunKinematics', () => {
     expect(Math.abs(fast.distance - slow.distance)).toBeLessThan(0.5);
   });
 
+  /**
+   * Die Truppe darf nie durch die Leitplanke wachsen: je breiter sie ist,
+   * desto weniger weit darf ihr Anker an den Rand.
+   */
+  it('keeps a wide formation on the asphalt', () => {
+    for (const halfWidth of [0, 1, 2.5, 3.7]) {
+      const k = new RunKinematics();
+      for (let t = 0; t < 3; t += STEP) k.update(1, STEP, halfWidth);
+      expect(k.x + halfWidth).toBeLessThanOrEqual(MOVEMENT.roadHalfWidth);
+      for (let t = 0; t < 6; t += STEP) k.update(-1, STEP, halfWidth);
+      expect(k.x - halfWidth).toBeGreaterThanOrEqual(-MOVEMENT.roadHalfWidth);
+    }
+  });
+
+  it('still lets a big army pick either side of a gate', () => {
+    const k = new RunKinematics();
+    // Breiteste mögliche Formation — die Seitenwahl muss erhalten bleiben.
+    for (let t = 0; t < 3; t += STEP) k.update(1, STEP, 3.7);
+    expect(k.x).toBeGreaterThan(0.5);
+  });
+
   it('resets to the starting state', () => {
     const k = new RunKinematics();
     simulate(k, 1, 2);

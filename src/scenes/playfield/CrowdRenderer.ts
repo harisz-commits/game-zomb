@@ -39,6 +39,10 @@ export class CrowdRenderer {
   constructor(scene: Scene) {
     this.material = new StandardMaterial('soldier-mat', scene);
     this.material.specularColor = Color3.Black();
+    // Bewusst NICHT eingefroren: dieses eine Material wechselt bei jeder
+    // Beförderung die Farbe, und ein eingefrorenes Material behält die alte.
+    // Der Gewinn wäre ein Material von wenigen — der Preis war, dass die
+    // Beförderung unsichtbar blieb.
 
     this.master = MeshBuilder.CreateBox(
       'soldier',
@@ -121,11 +125,9 @@ export class CrowdRenderer {
     if (tierIndex === this.tierIndex) return;
     this.tierIndex = tierIndex;
     const [r, g, b] = getTier(tierIndex).visual.color;
-    this.material.unfreeze();
     this.material.diffuseColor = new Color3(r, g, b);
     // Etwas Eigenleuchten, damit die Truppe auch im Schatten der Kulisse
     // ihre Fraktionsfarbe behält — Lesbarkeit vor Realismus.
     this.material.emissiveColor = new Color3(r * 0.16, g * 0.16, b * 0.16);
-    this.material.freeze();
   }
 }

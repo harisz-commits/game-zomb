@@ -3,33 +3,77 @@ import { GateSystem } from '../src/run/GateSystem';
 import { ArmyManager } from '../src/army/ArmyManager';
 import { EventBus } from '../src/core/EventBus';
 import { GATE_LAYOUT } from '../src/config/gates';
-import { ARMY } from '../src/config/gameBalance';
+import { ARMY, RUN } from '../src/config/gameBalance';
 import { Random } from '../src/util/Random';
-import { UNIT_TIERS } from '../src/config/unitTiers';
+import { UNIT_TIERS, MAX_TIER_INDEX } from '../src/config/unitTiers';
 
-type Chooser = (gate: { left: { appeal: number }; right: { appeal: number } }) => number;
+import { powerAfterEffect } from '../src/army/CombatPowerSystem';
+import { getTier } from '../src/config/unitTiers';
+import type { GateInstance } from '../src/run/GateSystem';
+
+/** Liefert die Lateralposition, die der Spieler an diesem Tor einnimmt. */
+type Chooser = (gate: GateInstance, power: number) => number;
 
 /**
- * Simuliert eine Fahrt über `gateCount` Tore. `chooser` liefert die
- * Lateralposition, die der Spieler an diesem Tor einnimmt.
+ * Simuliert eine Fahrt über `gateCount` Tore, samt Beförderung an jedem
+ * Kontrollpunkt — sonst bliebe die Armee künstlich auf Tier 1 stecken und
+ * die gemessene Kurve hätte mit dem Spiel nichts zu tun.
  */
 function simulate(seed: number, gateCount: number, chooser: Chooser): number {
   const army = new ArmyManager(new EventBus(), ARMY.startCombatPower);
   const gates = new GateSystem(seed);
   const end = GATE_LAYOUT.firstGateMeters + gateCount * GATE_LAYOUT.spacingMeters;
+  let sector = 0;
 
   for (let d = 0; d <= end; d += 1) {
-    // Vor dem Überfahren die Seite wählen, wie es ein Spieler täte.
     const upcoming = gates.active.find((gate) => !gate.resolved && gate.z - d < 12);
-    const x = upcoming ? chooser(upcoming) : 0;
+    const x = upcoming ? chooser(upcoming, army.combatPower) : 0;
     gates.update(d, x, (effect) => army.applyGate(effect));
+
+    const next = Math.floor(d / RUN.sectorLengthMeters);
+    if (next !== sector) {
+      sector = next;
+      army.tryPromote();
+    }
     if (army.defeated) return 0;
   }
   return army.combatPower;
 }
 
-const perfect: Chooser = (gate) => (gate.left.appeal >= gate.right.appeal ? -3 : 3);
-const worst: Chooser = (gate) => (gate.left.appeal <= gate.right.appeal ? -3 : 3);
+/** Wie das obige, liefert aber das erreichte Tier statt der Stärke. */
+function simulateTier(seed: number, gateCount: number, chooser: Chooser): number {
+  const army = new ArmyManager(new EventBus(), ARMY.startCombatPower);
+  const gates = new GateSystem(seed);
+  const end = GATE_LAYOUT.firstGateMeters + gateCount * GATE_LAYOUT.spacingMeters;
+  let sector = 0;
+  for (let d = 0; d <= end; d += 1) {
+    const upcoming = gates.active.find((gate) => !gate.resolved && gate.z - d < 12);
+    const x = upcoming ? chooser(upcoming, army.combatPower) : 0;
+    gates.update(d, x, (effect) => army.applyGate(effect));
+    const next = Math.floor(d / RUN.sectorLengthMeters);
+    if (next !== sector) {
+      sector = next;
+      army.tryPromote();
+    }
+  }
+  return army.current.tierIndex;
+}
+
+/**
+ * Bewertet beide Seiten an der ECHTEN aktuellen Stärke. Bei gemischten
+ * Schreibweisen hängt die richtige Wahl davon ab: „+50" schlägt „×1.5" bei
+ * 40 Soldaten, verliert dagegen bei 4.000.
+ */
+function betterSideIsLeft(gate: GateInstance, power: number): boolean {
+  const perUnit = getTier(0).powerPerUnit;
+  return (
+    powerAfterEffect(power, gate.left, perUnit) >=
+    powerAfterEffect(power, gate.right, perUnit)
+  );
+}
+
+const perfect: Chooser = (gate, power) => (betterSideIsLeft(gate, power) ? -3 : 3);
+const worst: Chooser = (gate, power) => (betterSideIsLeft(gate, power) ? 3 : -3);
 
 describe('gate balance', () => {
   /** Median über viele Seeds — Multiplikatoren streuen zu stark für einen. */
@@ -56,6 +100,21 @@ describe('gate balance', () => {
    * Wachstum muss sich potenzieren, nicht aufaddieren — sonst gibt es die
    * versprochene Machtfantasie nicht.
    */
+  /**
+   * Die Tier-Leiter darf in einer einzigen Runde nicht aufgebraucht werden.
+   * Die obersten Stufen sind laut Spezifikation für den Endlosmodus
+   * reserviert — wer sie nach vier Minuten erreicht, hat dort nichts mehr
+   * vor sich.
+   */
+  it('leaves the top tiers for endless mode', () => {
+    // ~50 Tore sind gut vier Minuten, also eine lange reguläre Runde.
+    const tiers = Array.from({ length: 40 }, (_, seed) => simulateTier(seed, 50, perfect));
+    tiers.sort((a, b) => a - b);
+    const median = tiers[Math.floor(tiers.length / 2)]!;
+    expect(median).toBeGreaterThanOrEqual(2);
+    expect(median).toBeLessThanOrEqual(MAX_TIER_INDEX - 2);
+  });
+
   it('compounds rather than adding up', () => {
     const twenty = medianPower(20, perfect);
     const forty = medianPower(40, perfect);
@@ -71,8 +130,9 @@ describe('gate balance', () => {
   });
 
   /**
-   * Wer blind fährt, soll nicht binnen Sekunden ausgelöscht werden: die
-   * ersten Tore entscheiden über den Eindruck der ganzen Runde.
+   * Ein Tor darf die Runde nie beenden. Es ist eine Entscheidung, kein Tod:
+   * ein "×0.05" bei acht Soldaten würde sonst in der zwanzigsten Sekunde
+   * eine Runde auslöschen, bevor der Spieler die Regeln kennt.
    */
   it('does not wipe out a player who steers blindly through the first gates', () => {
     const rng = new Random(1234);
@@ -82,7 +142,7 @@ describe('gate balance', () => {
       const power = simulate(i, 8, () => (rng.chance(0.5) ? -3 : 3));
       if (power > 0) survived += 1;
     }
-    expect(survived / runs).toBeGreaterThan(0.97);
+    expect(survived).toBe(runs);
   });
 
   /**
@@ -91,10 +151,7 @@ describe('gate balance', () => {
    */
   it('keeps additive gates relevant at higher tiers', () => {
     const bus = new EventBus();
-    const plus20 = {
-      kind: 'add' as const, value: 20, label: '+20',
-      tone: 'good' as const, weight: 1, appeal: 3,
-    };
+    const plus20 = { kind: 'add' as const, value: 20, notation: 'flat' as const, weight: 1 };
 
     const tier1 = new ArmyManager(bus, 100);
     tier1.applyGate(plus20);

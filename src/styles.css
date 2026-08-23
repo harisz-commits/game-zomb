@@ -377,3 +377,45 @@ body {
   padding: 3px 7px;
   border-radius: 5px;
 }
+
+.hud-overflow {
+  width: 58px;
+  height: 3px;
+  margin-top: 3px;
+  border-radius: 2px;
+  background: #ffffff26;
+  overflow: hidden;
+}
+
+.hud-overflow-fill {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: var(--ally);
+  border-radius: 2px;
+  transition: width 0.12s linear;
+}
+
+.hud-banner {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 34%;
+  text-align: center;
+  font-size: clamp(17px, 5.4vw, 30px);
+  font-weight: 900;
+  letter-spacing: 0.15em;
+  color: var(--accent);
+  text-shadow: 0 3px 18px #000000d9;
+  opacity: 0;
+  transform: scale(0.82);
+  transition:
+    opacity 0.18s ease,
+    transform 0.28s cubic-bezier(0.2, 1.5, 0.4, 1);
+  pointer-events: none;
+}
+
+.hud-banner.visible {
+  opacity: 1;
+  transform: scale(1);
+}

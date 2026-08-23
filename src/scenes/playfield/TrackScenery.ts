@@ -13,7 +13,7 @@ import { Random } from '../../util/Random';
 const SEGMENT_LENGTH = 20;
 /** Wie weit hinter dem Anker Geometrie stehen bleibt, bevor sie recycelt wird. */
 const BEHIND_METERS = 40;
-const ROAD_HALF_WIDTH = MOVEMENT.laneHalfWidth + 1.6;
+const ROAD_HALF_WIDTH = MOVEMENT.roadHalfWidth;
 /** Breite des Gelaendes neben der Strasse. */
 const TERRAIN_HALF_WIDTH = 42;
 /** Oberkante des Gelaendes — liegt unter dem Strassenniveau. */
