@@ -3,7 +3,13 @@ import { canPromote, promote } from '../src/army/PromotionSystem';
 import { createArmyState } from '../src/army/CombatPowerSystem';
 import { ArmyManager } from '../src/army/ArmyManager';
 import { EventBus } from '../src/core/EventBus';
-import { UNIT_TIERS, MAX_TIER_INDEX, getTier } from '../src/config/unitTiers';
+import {
+  UNIT_TIERS,
+  MAX_TIER_INDEX,
+  getTier,
+  TIER_RATIO,
+  PROMOTION_SQUAD_SIZE,
+} from '../src/config/unitTiers';
 import { DISPLAY_CAPS } from '../src/config/gameBalance';
 
 describe('promotion', () => {
@@ -19,14 +25,12 @@ describe('promotion', () => {
     }
   });
 
-  it('turns 100 militia into 1 rifleman', () => {
-    const tier = getTier(1);
-    expect(tier.powerPerUnit).toBe(100);
-    // Genau die Rechnung aus der Spezifikation: 237 Militia → 2 Riflemen
-    // plus 37 Punkte Restfortschritt.
+  it('turns ten militia into one rifleman', () => {
+    expect(getTier(1).powerPerUnit).toBe(TIER_RATIO);
+    // 237 Basispunkte: 23 Riflemen plus 7 Punkte Restfortschritt.
     const promoted = createArmyState(237, 1);
-    expect(promoted.displayCount).toBe(2);
-    expect(promoted.overflowProgress).toBeCloseTo(0.37);
+    expect(promoted.displayCount).toBe(23);
+    expect(promoted.overflowProgress).toBeCloseTo(0.7);
   });
 
   it('does not promote below the threshold', () => {
@@ -44,6 +48,17 @@ describe('promotion', () => {
     const result = promote(createArmyState(UNIT_TIERS[3]!.promotionThreshold, 0));
     expect(result.toTierIndex).toBe(3);
     expect(result.steps).toBe(3);
+  });
+
+  /** Nach jeder Beförderung passt die Truppe wieder ins Bild. */
+  it('always lands under the render budget, whatever the power', () => {
+    for (const power of [200, 5_000, 1e6, 1e9]) {
+      const after = promote(createArmyState(power, 0)).state;
+      const stillClimbing = canPromote(after);
+      if (!stillClimbing) {
+        expect(after.unitCount).toBeLessThanOrEqual(DISPLAY_CAPS.alliesHard);
+      }
+    }
   });
 
   it('stops at the highest tier instead of running off the table', () => {
@@ -64,8 +79,26 @@ describe('promotion', () => {
     expect(overflowing.displayCount).toBe(DISPLAY_CAPS.alliesHard);
 
     const after = promote(overflowing).state;
-    expect(after.unitCount).toBe(500);
+    expect(after.unitCount).toBeLessThanOrEqual(DISPLAY_CAPS.alliesHard);
+    expect(after.unitCount).toBeGreaterThanOrEqual(PROMOTION_SQUAD_SIZE);
     expect(after.combatPower).toBe(50_000);
+  });
+
+  /**
+   * Die eigentliche Beschwerde aus dem Spieltest: bei vollem Bildschirm
+   * passierte nichts. Die Beförderung muss genau dann greifen, wenn die
+   * Truppe das Renderbudget füllt — nicht ein Vielfaches später.
+   */
+  it('fires as soon as the crowd fills the screen', () => {
+    for (let tier = 0; tier < MAX_TIER_INDEX; tier += 1) {
+      const perUnit = getTier(tier).powerPerUnit;
+      const justFull = createArmyState(DISPLAY_CAPS.alliesHard * perUnit, tier);
+      expect(justFull.displayCount).toBe(DISPLAY_CAPS.alliesHard);
+      expect(canPromote(justFull)).toBe(true);
+
+      const nearlyFull = createArmyState((DISPLAY_CAPS.alliesHard - 1) * perUnit, tier);
+      expect(canPromote(nearlyFull)).toBe(false);
+    }
   });
 
   /**
@@ -91,21 +124,21 @@ describe('promotion', () => {
   });
 
   it('keeps the leftover as visible progress, never as loss', () => {
-    // 1.250 Basispunkte: 12 Riflemen und ein halber.
-    const after = promote(createArmyState(1250, 0)).state;
+    // 145 Basispunkte: 14 Riflemen und ein halber.
+    const after = promote(createArmyState(145, 0)).state;
     expect(after.tierIndex).toBe(1);
-    expect(after.displayCount).toBe(12);
+    expect(after.displayCount).toBe(14);
     expect(after.overflowProgress).toBeCloseTo(0.5);
     // Gegenprobe: sichtbare Einheiten plus Rest ergeben die volle Stärke.
     const reconstructed =
       (after.displayCount + after.overflowProgress) * getTier(1).powerPerUnit;
-    expect(reconstructed).toBeCloseTo(1250);
+    expect(reconstructed).toBeCloseTo(145);
   });
 });
 
 describe('ArmyManager promotion', () => {
   it('promotes only when asked, not on every gate', () => {
-    const army = new ArmyManager(new EventBus(), 5000);
+    const army = new ArmyManager(new EventBus(), 200);
     expect(army.current.tierIndex).toBe(0);
     expect(army.promotionPending).toBe(true);
 
@@ -121,7 +154,7 @@ describe('ArmyManager promotion', () => {
     const bus = new EventBus();
     const seen = vi.fn();
     bus.on('army:promoted', seen);
-    const army = new ArmyManager(bus, 5000);
+    const army = new ArmyManager(bus, 200);
 
     army.tryPromote();
     army.tryPromote();
@@ -131,18 +164,18 @@ describe('ArmyManager promotion', () => {
   });
 
   it('remembers the highest tier reached even after heavy losses', () => {
-    const army = new ArmyManager(new EventBus(), 5000);
+    const army = new ArmyManager(new EventBus(), 200);
     army.tryPromote();
-    army.damage(4999);
+    army.damage(199);
     expect(army.current.tierIndex).toBe(1);
     expect(army.peakTierIndex).toBe(1);
   });
 
   it('makes additive gates scale with the new tier', () => {
-    const army = new ArmyManager(new EventBus(), 5000);
+    const army = new ArmyManager(new EventBus(), 200);
     army.tryPromote();
-    // "+10" heisst jetzt zehn RIFLEMEN, also 1.000 Basispunkte.
+    // "+10" heisst jetzt zehn RIFLEMEN, also 100 Basispunkte.
     army.applyGate({ kind: 'add', value: 10, notation: 'flat', weight: 1 });
-    expect(army.combatPower).toBe(6000);
+    expect(army.combatPower).toBe(300);
   });
 });

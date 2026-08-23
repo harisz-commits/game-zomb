@@ -91,9 +91,25 @@ export function powerAfterEffect(
   power: number,
   effect: GateEffect,
   powerPerUnit: number,
+  modifiers?: { gateGain: number; gateShield: number },
 ): number {
-  const next =
-    effect.kind === 'add' ? power + effect.value * powerPerUnit : power * effect.value;
+  const gain = modifiers?.gateGain ?? 1;
+  const shield = modifiers?.gateShield ?? 0;
+
+  let next: number;
+  if (effect.kind === 'add') {
+    // Nur Zugewinne werden verstärkt; ein negativer Summand bliebe sonst
+    // durch eine Wachstumskarte paradoxerweise schlimmer.
+    const scaled = effect.value > 0 ? effect.value * gain : effect.value;
+    next = power + scaled * powerPerUnit;
+  } else if (effect.value >= 1) {
+    // Aus "×2" wird bei +50% Ertrag "×2.5": der Zugewinn wächst, nicht der
+    // Faktor selbst — sonst würde eine Karte aus ×0.5 eine Verstärkung machen.
+    next = power * (1 + (effect.value - 1) * gain);
+  } else {
+    // Strafe abschwächen: ×0.5 wird bei 40% Schild zu ×0.7.
+    next = power * (effect.value + (1 - effect.value) * shield);
+  }
   // Ganzzahlig halten: das HUD soll keine Bruchteile von Soldaten zeigen.
   return Math.max(0, Math.floor(next));
 }

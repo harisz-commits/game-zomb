@@ -1,16 +1,43 @@
 import { describe, expect, it } from 'vitest';
-import { UNIT_TIERS, getTier, PROMOTION_SQUAD_SIZE } from '../src/config/unitTiers';
+import {
+  UNIT_TIERS,
+  getTier,
+  PROMOTION_SQUAD_SIZE,
+  TIER_RATIO,
+} from '../src/config/unitTiers';
 import { ENEMY_ARCHETYPES } from '../src/config/enemyStats';
 import { DISPLAY_CAPS, SIMULATION } from '../src/config/gameBalance';
 import { threatLevelForSector, upgradeCost } from '../src/config/levelCurves';
 import { formatCompact, formatDuration } from '../src/util/format';
 
 describe('unit tiers', () => {
-  it('increases power per unit by a factor of 100 per tier', () => {
+  it('increases power per unit by the configured ratio per tier', () => {
     for (let i = 1; i < UNIT_TIERS.length; i += 1) {
       const previous = UNIT_TIERS[i - 1]!;
       const current = UNIT_TIERS[i]!;
-      expect(current.powerPerUnit / previous.powerPerUnit).toBe(100);
+      expect(current.powerPerUnit / previous.powerPerUnit).toBeCloseTo(TIER_RATIO, 6);
+    }
+  });
+
+  /**
+   * Der Kern der Neuabstimmung: die Beförderung muss genau dann fällig sein,
+   * wenn das Renderbudget voll ist. Sonst steht die Truppe optisch still,
+   * während die Zahl weiterläuft — und der Spieler sieht nichts passieren.
+   */
+  it('promotes exactly when the crowd fills the render budget', () => {
+    for (let i = 1; i < UNIT_TIERS.length; i += 1) {
+      const previous = UNIT_TIERS[i - 1]!;
+      const capReachedAt = DISPLAY_CAPS.alliesHard * previous.powerPerUnit;
+      expect(UNIT_TIERS[i]!.promotionThreshold).toBeCloseTo(capReachedAt, 6);
+    }
+  });
+
+  it('leaves a visible squad behind after every promotion', () => {
+    for (let i = 1; i < UNIT_TIERS.length; i += 1) {
+      const tier = UNIT_TIERS[i]!;
+      const unitsAfter = tier.promotionThreshold / tier.powerPerUnit;
+      expect(unitsAfter).toBeGreaterThanOrEqual(10);
+      expect(unitsAfter).toBeLessThanOrEqual(DISPLAY_CAPS.alliesHard);
     }
   });
 
@@ -26,7 +53,7 @@ describe('unit tiers', () => {
   it('sets promotion thresholds to a full squad of the new tier', () => {
     for (let i = 1; i < UNIT_TIERS.length; i += 1) {
       const tier = UNIT_TIERS[i]!;
-      expect(tier.promotionThreshold).toBe(tier.powerPerUnit * PROMOTION_SQUAD_SIZE);
+      expect(tier.promotionThreshold).toBeCloseTo(tier.powerPerUnit * PROMOTION_SQUAD_SIZE, 6);
     }
   });
 

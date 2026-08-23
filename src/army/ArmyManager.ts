@@ -5,6 +5,7 @@ import { getTier } from '../config/unitTiers';
 import { ARMY } from '../config/gameBalance';
 import { createArmyState, isDefeated, powerAfterEffect } from './CombatPowerSystem';
 import { canPromote, promote } from './PromotionSystem';
+import type { RunModifiers } from '../run/RunModifiers';
 
 /**
  * Hält den Armeezustand und ist die einzige Stelle, die ihn verändert.
@@ -20,6 +21,7 @@ export class ArmyManager {
   constructor(
     private readonly bus: EventBus,
     startPower: number = ARMY.startCombatPower,
+    private readonly modifiers?: RunModifiers,
   ) {
     this.state = createArmyState(startPower, 0);
     this.peakPower = this.state.combatPower;
@@ -68,7 +70,7 @@ export class ArmyManager {
   /** Wendet eine Gate-Entscheidung an. Rechnung siehe `powerAfterEffect`. */
   applyGate(effect: GateEffect): void {
     const perUnit = getTier(this.state.tierIndex).powerPerUnit;
-    const next = powerAfterEffect(this.state.combatPower, effect, perUnit);
+    const next = powerAfterEffect(this.state.combatPower, effect, perUnit, this.modifiers);
     // Ein Tor darf die Runde nicht beenden. Es ist eine Entscheidung, kein
     // Tod — sonst löscht ein "×0.05" bei acht Soldaten in der zwanzigsten
     // Sekunde eine Runde aus, bevor der Spieler die Regeln kennt. Sterben
@@ -76,9 +78,21 @@ export class ArmyManager {
     this.setPower(this.state.combatPower > 0 ? Math.max(1, next) : next);
   }
 
+  /**
+   * Rekrutiert sofort Einheiten des aktuellen Tiers.
+   *
+   * In Einheiten, nicht in Basispunkten: „+20 units" muss beim zwölften Tier
+   * dasselbe bedeuten wie beim ersten.
+   */
+  recruit(units: number): void {
+    if (units <= 0) return;
+    const perUnit = getTier(this.state.tierIndex).powerPerUnit;
+    this.setPower(this.state.combatPower + Math.round(units * perUnit));
+  }
+
   /** Steht eine Beförderung an? Wird an Kontrollpunkten geprüft. */
   get promotionPending(): boolean {
-    return canPromote(this.state);
+    return canPromote(this.state, this.modifiers?.promotionDiscount ?? 0);
   }
 
   /**
@@ -91,7 +105,7 @@ export class ArmyManager {
    * @returns Anzahl der Stufen; 0, wenn nichts passiert ist.
    */
   tryPromote(): number {
-    const result = promote(this.state);
+    const result = promote(this.state, this.modifiers?.promotionDiscount ?? 0);
     if (result.steps === 0) return 0;
     this.state = result.state;
     this.peakTier = Math.max(this.peakTier, this.state.tierIndex);

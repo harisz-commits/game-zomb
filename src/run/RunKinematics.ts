@@ -20,8 +20,10 @@ export class RunKinematics {
   x = 0;
   /** Zwischenziel der Lateralbewegung in Metern. */
   private desiredX = 0;
-  /** Meter pro Sekunde; von Effekten spaeter modifizierbar. */
-  forwardSpeed = MOVEMENT.forwardSpeed;
+  /** Faktor auf die Vorwärtsgeschwindigkeit (Karte „Forced March"). */
+  speedMultiplier = 1;
+  /** Faktor auf die Lenkgeschwindigkeit (Karte „Drill Training"). */
+  steeringMultiplier = 1;
 
   /** Lateralgeschwindigkeit in m/s — treibt Neigung und Formation. */
   lateralVelocity = 0;
@@ -31,7 +33,8 @@ export class RunKinematics {
     this.x = 0;
     this.desiredX = 0;
     this.lateralVelocity = 0;
-    this.forwardSpeed = MOVEMENT.forwardSpeed;
+    this.speedMultiplier = 1;
+    this.steeringMultiplier = 1;
   }
 
   /**
@@ -48,7 +51,8 @@ export class RunKinematics {
       Math.min(MOVEMENT.laneHalfWidth, MOVEMENT.roadHalfWidth - formationHalfWidth - 0.4),
     );
     const targetX = clamp(inputLateral, -1, 1) * limit;
-    this.desiredX = moveTowards(this.desiredX, targetX, MOVEMENT.lateralSpeed * dt);
+    const lateralSpeed = MOVEMENT.lateralSpeed * this.steeringMultiplier;
+    this.desiredX = moveTowards(this.desiredX, targetX, lateralSpeed * dt);
 
     const previousX = this.x;
     this.x = clamp(
@@ -58,7 +62,7 @@ export class RunKinematics {
     );
     this.lateralVelocity = dt > 0 ? (this.x - previousX) / dt : 0;
 
-    this.distance += this.forwardSpeed * dt;
+    this.distance += MOVEMENT.forwardSpeed * this.speedMultiplier * dt;
   }
 
   /** Normalisierte Lateralposition [-1, 1] — fuer Kamera und HUD. */

@@ -18,15 +18,14 @@ describe('combat power derivation', () => {
     expect(deriveDisplayCount(37, MILITIA)).toBe(37);
   });
 
-  it('shows one rifleman per 100 base points', () => {
-    expect(rawUnits(237, RIFLEMEN)).toBeCloseTo(2.37);
-    expect(deriveDisplayCount(237, RIFLEMEN)).toBe(2);
+  it('shows one rifleman per ten base points', () => {
+    expect(rawUnits(237, RIFLEMEN)).toBeCloseTo(23.7);
+    expect(deriveDisplayCount(237, RIFLEMEN)).toBe(23);
   });
 
   it('keeps the remainder as overflow instead of losing it', () => {
-    // Der Fall aus der Spezifikation: 237 Militia werden zu 2 Riflemen und
-    // 37 Punkten Restfortschritt.
-    expect(deriveOverflow(237, RIFLEMEN)).toBeCloseTo(0.37);
+    // 237 Basispunkte sind 23 Riflemen und ein Rest von 7 Punkten.
+    expect(deriveOverflow(237, RIFLEMEN)).toBeCloseTo(0.7);
   });
 
   it('never renders more soldiers than the budget allows', () => {

@@ -13,11 +13,15 @@ import { RunKinematics } from '../run/RunKinematics';
 import { GateSystem } from '../run/GateSystem';
 import { ArmyManager } from '../army/ArmyManager';
 import { FormationLayout } from '../army/FormationSystem';
+import { RunModifiers } from '../run/RunModifiers';
+import { drawUpgradeCards, type UpgradeCard } from '../run/UpgradeDraft';
+import { UpgradeDraftPanel } from '../ui/UpgradePanels';
+import { DRAFT } from '../config/upgrades';
 import { HUD } from '../ui/HUD';
 import { DebugOverlay } from '../ui/DebugOverlay';
 import { UiLayer, button } from '../ui/dom';
 import { ARMY, RENDER, RUN } from '../config/gameBalance';
-import { createSeed } from '../util/Random';
+import { Random, createSeed } from '../util/Random';
 import { clamp } from '../util/math';
 import { IS_DEV } from '../core/Config';
 
@@ -60,12 +64,17 @@ export class RunScene extends GameScene {
 
   private readonly kinematics = new RunKinematics();
   private readonly formation = new FormationLayout();
+  private readonly modifiers = new RunModifiers();
   private army!: ArmyManager;
   private gates!: GateSystem;
+  private draftRng!: Random;
 
   private elapsed = 0;
   private sectorIndex = 0;
+  private draftIndex = 0;
   private finished = false;
+  /** Während des Zwischenspiels steht die Simulation still. */
+  private draft: UpgradeDraftPanel | null = null;
 
   enter(): void {
     const scene = new Scene(this.ctx.engine);
@@ -93,11 +102,16 @@ export class RunScene extends GameScene {
     this.gateRenderer = new GateRenderer(scene);
 
     const seed = createSeed();
-    this.army = new ArmyManager(this.ctx.bus, startingPower());
+    this.modifiers.reset();
+    this.army = new ArmyManager(this.ctx.bus, startingPower(), this.modifiers);
     this.gates = new GateSystem(seed);
+    // Eigener Zufallsstrom für die Karten: sonst verschöbe jede zusätzliche
+    // Ziehung die gesamte Torfolge.
+    this.draftRng = new Random(seed ^ 0x9e3779b9);
     this.kinematics.reset();
     this.elapsed = 0;
     this.sectorIndex = 0;
+    this.draftIndex = 0;
     this.finished = false;
     this.camera.snapTo(0, 0);
 
@@ -127,7 +141,9 @@ export class RunScene extends GameScene {
   }
 
   override update(dt: number): void {
-    if (this.finished) return;
+    // Das Zwischenspiel hält die Runde an: keine Bewegung, keine Tore, keine
+    // Uhr. Der Spieler soll lesen können, ohne etwas zu verpassen.
+    if (this.finished || this.draft) return;
 
     this.elapsed += dt;
     // Formation vor der Bewegung aktualisieren: ihre Breite begrenzt, wie
@@ -164,10 +180,52 @@ export class RunScene extends GameScene {
    * Ab Phase 5 setzt der RunDirector diese Punkte bewusst statt alle 220 m.
    */
   private reachCheckpoint(): void {
-    const steps = this.army.tryPromote();
-    if (steps > 0) {
+    const promotedTo = this.army.tryPromote() > 0 ? this.army.tierName : null;
+
+    // Beim ERSTEN Kontrollpunkt immer ziehen, danach jeden n-ten: der
+    // Spieler soll das Zwischenspiel früh kennenlernen, nicht erst nach
+    // zwei Minuten.
+    if ((this.sectorIndex - 1) % DRAFT.everySectors === 0) {
+      this.openDraft(promotedTo);
+    } else if (promotedTo) {
+      // Ohne Zwischenspiel bekommt die Beförderung ihr eigenes Banner.
+      this.hud?.showPromotion(promotedTo, this.elapsed);
+    }
+  }
+
+  /** Hält die Runde an und legt drei Karten hin. */
+  private openDraft(promotedTo: string | null): void {
+    if (this.draft) return;
+    const cards = drawUpgradeCards(this.draftRng, this.draftIndex);
+    this.draftIndex += 1;
+    this.draft = new UpgradeDraftPanel(
+      this.ctx.uiRoot,
+      cards,
+      (card) => this.takeCard(card),
+      promotedTo,
+    );
+  }
+
+  private takeCard(card: UpgradeCard): void {
+    const recruits = this.modifiers.apply(card.kind, card.magnitude);
+    if (recruits > 0) this.army.recruit(recruits);
+    // Tempo- und Lenkkarten wirken über die Kinematik.
+    this.kinematics.speedMultiplier = this.modifiers.speed;
+    this.kinematics.steeringMultiplier = this.modifiers.steering;
+    this.closeDraft();
+    // Ein Schwellenrabatt oder frische Rekruten können eine Beförderung
+    // sofort fällig machen — das Banner passt jetzt, das Fenster ist zu.
+    if (this.army.tryPromote() > 0) {
       this.hud?.showPromotion(this.army.tierName, this.elapsed);
     }
+  }
+
+  private closeDraft(): void {
+    this.draft?.dispose();
+    this.draft = null;
+    // Eingabe zurücksetzen: der Finger, der die Karte getippt hat, darf die
+    // Armee nicht mitreißen.
+    this.ctx.input.reset();
   }
 
   override beforeRender(_alpha: number): void {
@@ -207,6 +265,7 @@ export class RunScene extends GameScene {
   }
 
   override exit(): void {
+    this.closeDraft();
     // Renderer zuerst: sie geben Texturen und Material-Caches frei, die die
     // Babylon-Szene allein nicht kennt.
     this.scenery?.dispose();

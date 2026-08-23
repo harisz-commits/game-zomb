@@ -1,68 +1,90 @@
 import type { UnitTier } from '../core/Types';
+import { DISPLAY_CAPS } from './gameBalance';
 
 /**
  * Einheiten-Tiers. Reine Daten — kein System darf diese Zahlen hartcodieren.
  *
- * `powerPerUnit` ist immer in Tier-1-Basispunkten (Militia-Power) angegeben.
- * Der Faktor zwischen zwei Tiers betraegt laut Spezifikation 100.
+ * ## Warum 10:1 und nicht 100:1
  *
- * `promotionThreshold` ist bewusst NICHT gleich `powerPerUnit`: wuerde man bei
- * exakt 100 Militia befoerdern, stuende danach ein einzelner Rifleman auf dem
- * Feld — das faehlt sich wie ein Rueckschritt an. Stattdessen wird befoerdert,
- * sobald daraus ein sichtbarer Trupp wird (Faktor PROMOTION_SQUAD_SIZE).
- * Die 100:1-Umrechnung bleibt davon unberuehrt.
+ * Die Spezifikation schlug 100 Militia je Rifleman vor. Das verträgt sich
+ * nicht mit einem Renderbudget von 140 Figuren:
+ *
+ * - Bei 140 Figuren ist die Truppe optisch voll. Ab hier wächst nur noch
+ *   die Zahl im HUD, das Bild steht still.
+ * - Mit 100:1 käme die Beförderung erst bei 1.200 Einheiten — also 8,6×
+ *   später. So lange sieht der Spieler Stillstand und fragt sich zu Recht,
+ *   warum nichts passiert.
+ * - Befördert man stattdessen sofort bei 140, blieben mit 100:1 ganze
+ *   1,4 Soldaten übrig. Das fühlt sich wie eine Bestrafung an.
+ *
+ * Mit einem Faktor von 10 fällt die Beförderung genau dort, wo die Truppe
+ * voll ist, und hinterlässt einen sichtbaren Trupp von 14 Einheiten. Der
+ * Aufstieg wird damit vom seltenen Ereignis zum Takt der Runde.
  */
 
-/** Wie viele Einheiten des neuen Tiers eine Promotion mindestens liefern soll. */
-export const PROMOTION_SQUAD_SIZE = 12;
+/** Stärkeverhältnis zwischen zwei benachbarten Tiers. */
+export const TIER_RATIO = 10;
 
-export const UNIT_TIERS: readonly UnitTier[] = [
-  {
-    id: 'militia',
-    name: 'Militia',
-    powerPerUnit: 1,
-    promotionThreshold: 0,
-    damageMultiplier: 1,
-    fireRateMultiplier: 1,
-    visual: { color: [0.55, 0.62, 0.7], scale: 1, muzzleIntensity: 1 },
-  },
-  {
-    id: 'riflemen',
-    name: 'Riflemen',
-    powerPerUnit: 1e2,
-    promotionThreshold: 1e2 * PROMOTION_SQUAD_SIZE,
-    damageMultiplier: 1.15,
-    fireRateMultiplier: 1.05,
-    visual: { color: [0.3, 0.66, 1], scale: 1.08, muzzleIntensity: 1.4 },
-  },
-  {
-    id: 'veterans',
-    name: 'Veterans',
-    powerPerUnit: 1e4,
-    promotionThreshold: 1e4 * PROMOTION_SQUAD_SIZE,
-    damageMultiplier: 1.3,
-    fireRateMultiplier: 1.1,
-    visual: { color: [0.2, 0.85, 0.62], scale: 1.16, muzzleIntensity: 1.9 },
-  },
-  {
-    id: 'special-forces',
-    name: 'Special Forces',
-    powerPerUnit: 1e6,
-    promotionThreshold: 1e6 * PROMOTION_SQUAD_SIZE,
-    damageMultiplier: 1.5,
-    fireRateMultiplier: 1.2,
-    visual: { color: [0.95, 0.72, 0.22], scale: 1.24, muzzleIntensity: 2.5 },
-  },
-  {
-    id: 'exo-troopers',
-    name: 'Heavy Exo Troopers',
-    powerPerUnit: 1e8,
-    promotionThreshold: 1e8 * PROMOTION_SQUAD_SIZE,
-    damageMultiplier: 1.75,
-    fireRateMultiplier: 1.3,
-    visual: { color: [0.86, 0.32, 0.86], scale: 1.35, muzzleIntensity: 3.2 },
-  },
-] as const;
+/**
+ * Einheiten des neuen Tiers direkt nach einer Beförderung.
+ *
+ * Abgeleitet statt gesetzt: die Beförderung soll genau dann fällig sein,
+ * wenn das Renderbudget voll ist. Ändert jemand den Deckel, verschiebt sich
+ * die Schwelle automatisch mit.
+ */
+export const PROMOTION_SQUAD_SIZE = DISPLAY_CAPS.alliesHard / TIER_RATIO;
+
+interface TierSpec {
+  id: string;
+  name: string;
+  color: [number, number, number];
+  scale: number;
+  muzzleIntensity: number;
+}
+
+/**
+ * Zwölf Stufen.
+ *
+ * Mit einem Faktor von 10 fällt eine Beförderung etwa alle 35 Sekunden — ein
+ * spürbarer Takt statt eines seltenen Ereignisses. Der Preis ist, dass eine
+ * lange Runde rund sieben Stufen verbraucht; die restlichen sind das Futter
+ * für den Endlosmodus. Ab Phase 4 kosten Gegner Kampfkraft und flachen die
+ * Kurve ab — dann ist die Zahl der Stufen erneut zu prüfen.
+ */
+const SPECS: readonly TierSpec[] = [
+  { id: 'militia', name: 'Militia', color: [0.55, 0.62, 0.7], scale: 1, muzzleIntensity: 1 },
+  { id: 'riflemen', name: 'Riflemen', color: [0.3, 0.66, 1], scale: 1.06, muzzleIntensity: 1.3 },
+  { id: 'veterans', name: 'Veterans', color: [0.2, 0.85, 0.62], scale: 1.12, muzzleIntensity: 1.6 },
+  { id: 'special-forces', name: 'Special Forces', color: [0.95, 0.72, 0.22], scale: 1.18, muzzleIntensity: 2 },
+  { id: 'exo-troopers', name: 'Heavy Exo Troopers', color: [0.86, 0.32, 0.86], scale: 1.25, muzzleIntensity: 2.4 },
+  { id: 'siege-walkers', name: 'Siege Walkers', color: [1, 0.44, 0.24], scale: 1.32, muzzleIntensity: 2.9 },
+  { id: 'orbital-marines', name: 'Orbital Marines', color: [0.35, 0.95, 0.95], scale: 1.4, muzzleIntensity: 3.4 },
+  { id: 'titan-guard', name: 'Titan Guard', color: [1, 0.92, 0.4], scale: 1.5, muzzleIntensity: 4 },
+  { id: 'void-lancers', name: 'Void Lancers', color: [0.62, 0.4, 1], scale: 1.58, muzzleIntensity: 4.6 },
+  { id: 'aegis-sentinels', name: 'Aegis Sentinels', color: [0.2, 1, 0.78], scale: 1.66, muzzleIntensity: 5.2 },
+  { id: 'ashborne-legion', name: 'Ashborne Legion', color: [1, 0.28, 0.42], scale: 1.74, muzzleIntensity: 5.9 },
+  { id: 'eclipse-vanguard', name: 'Eclipse Vanguard', color: [1, 1, 1], scale: 1.85, muzzleIntensity: 6.6 },
+];
+
+export const UNIT_TIERS: readonly UnitTier[] = SPECS.map((spec, index) => {
+  const powerPerUnit = Math.pow(TIER_RATIO, index);
+  return {
+    id: spec.id,
+    name: spec.name,
+    powerPerUnit,
+    // Tier 0 ist der Startzustand und hat keine Schwelle.
+    promotionThreshold: index === 0 ? 0 : powerPerUnit * PROMOTION_SQUAD_SIZE,
+    // Höhere Tiers sind nicht nur zahlreicher wert, sondern pro Einheit
+    // auch besser — sonst wäre der Aufstieg reine Buchhaltung.
+    damageMultiplier: 1 + index * 0.12,
+    fireRateMultiplier: 1 + index * 0.06,
+    visual: {
+      color: spec.color,
+      scale: spec.scale,
+      muzzleIntensity: spec.muzzleIntensity,
+    },
+  };
+});
 
 export const MAX_TIER_INDEX = UNIT_TIERS.length - 1;
 

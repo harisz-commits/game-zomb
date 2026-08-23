@@ -3,12 +3,12 @@ import { GateSystem } from '../src/run/GateSystem';
 import { ArmyManager } from '../src/army/ArmyManager';
 import { EventBus } from '../src/core/EventBus';
 import { GATE_LAYOUT } from '../src/config/gates';
-import { ARMY, RUN } from '../src/config/gameBalance';
+import { ARMY, MOVEMENT, RUN } from '../src/config/gameBalance';
 import { Random } from '../src/util/Random';
-import { UNIT_TIERS, MAX_TIER_INDEX } from '../src/config/unitTiers';
+import { MAX_TIER_INDEX, getTier } from '../src/config/unitTiers';
 
 import { powerAfterEffect } from '../src/army/CombatPowerSystem';
-import { getTier } from '../src/config/unitTiers';
+
 import type { GateInstance } from '../src/run/GateSystem';
 
 /** Liefert die Lateralposition, die der Spieler an diesem Tor einnimmt. */
@@ -38,6 +38,35 @@ function simulate(seed: number, gateCount: number, chooser: Chooser): number {
     if (army.defeated) return 0;
   }
   return army.combatPower;
+}
+
+/** Zählt, wie oft in einer Fahrt befördert wurde. */
+function countPromotions(seed: number, gateCount: number, chooser: Chooser): number {
+  return promotionSeconds(seed, gateCount, chooser).length;
+}
+
+/** Sekunde der ersten Beförderung; -1, wenn keine fiel. */
+function firstPromotionSecond(seed: number, chooser: Chooser): number {
+  return promotionSeconds(seed, 50, chooser)[0] ?? -1;
+}
+
+function promotionSeconds(seed: number, gateCount: number, chooser: Chooser): number[] {
+  const army = new ArmyManager(new EventBus(), ARMY.startCombatPower);
+  const gates = new GateSystem(seed);
+  const end = GATE_LAYOUT.firstGateMeters + gateCount * GATE_LAYOUT.spacingMeters;
+  const seconds: number[] = [];
+  let sector = 0;
+  for (let d = 0; d <= end; d += 1) {
+    const upcoming = gates.active.find((gate) => !gate.resolved && gate.z - d < 12);
+    const x = upcoming ? chooser(upcoming, army.combatPower) : 0;
+    gates.update(d, x, (effect) => army.applyGate(effect));
+    const next = Math.floor(d / RUN.sectorLengthMeters);
+    if (next !== sector) {
+      sector = next;
+      if (army.tryPromote() > 0) seconds.push(d / MOVEMENT.forwardSpeed);
+    }
+  }
+  return seconds;
 }
 
 /** Wie das obige, liefert aber das erreichte Tier statt der Stärke. */
@@ -84,16 +113,24 @@ describe('gate balance', () => {
   }
 
   /**
-   * Der Maßstab kommt aus dem Design, nicht aus dem Bauch: wer gut wählt,
-   * muss die erste Beförderung INNERHALB einer Runde verdienen. Käme sie
-   * nie, liefe das Tier-System leer; käme sie sofort, wäre sie wertlos.
+   * Beförderung ist der Takt der Runde, nicht ihr Höhepunkt.
+   *
+   * Die Beschwerde aus dem Spieltest war, dass bei vollem Bildschirm nichts
+   * passiert. Also muss die erste Beförderung früh fallen und danach
+   * regelmäßig — mehrere pro Runde.
    */
-  it('earns the first promotion partway through a run', () => {
-    const threshold = UNIT_TIERS[1]!.promotionThreshold;
-    // ~25 Tore sind gut zwei Minuten Fahrt.
-    expect(medianPower(25, perfect)).toBeGreaterThan(threshold);
-    // Aber nicht schon nach einer halben Minute.
-    expect(medianPower(6, perfect)).toBeLessThan(threshold);
+  it('promotes early and repeatedly', () => {
+    const counts = Array.from({ length: 40 }, (_, seed) =>
+      countPromotions(seed, 50, perfect),
+    ).sort((a, b) => a - b);
+    const median = counts[Math.floor(counts.length / 2)]!;
+    expect(median).toBeGreaterThanOrEqual(4);
+
+    // Und die erste kommt nicht erst kurz vor Schluss.
+    const firstAt = Array.from({ length: 40 }, (_, seed) => firstPromotionSecond(seed, perfect))
+      .filter((v) => v > 0)
+      .sort((a, b) => a - b);
+    expect(firstAt[Math.floor(firstAt.length / 2)]!).toBeLessThan(60);
   });
 
   /**
@@ -111,8 +148,8 @@ describe('gate balance', () => {
     const tiers = Array.from({ length: 40 }, (_, seed) => simulateTier(seed, 50, perfect));
     tiers.sort((a, b) => a - b);
     const median = tiers[Math.floor(tiers.length / 2)]!;
-    expect(median).toBeGreaterThanOrEqual(2);
-    expect(median).toBeLessThanOrEqual(MAX_TIER_INDEX - 2);
+    expect(median).toBeGreaterThanOrEqual(3);
+    expect(median).toBeLessThanOrEqual(MAX_TIER_INDEX - 3);
   });
 
   it('compounds rather than adding up', () => {
@@ -157,11 +194,13 @@ describe('gate balance', () => {
     tier1.applyGate(plus20);
     expect(tier1.combatPower).toBe(120);
 
-    // Dieselbe Armee, aber als Riflemen (1 Einheit = 100 Basispunkte):
-    // "+20" muss 20 Riflemen bringen, nicht 20 Basispunkte.
+    // Dieselbe Armee nach Beförderung: "+20" muss 20 Einheiten des neuen
+    // Tiers bringen, nicht 20 Basispunkte.
     const promoted = new ArmyManager(bus, 10_000);
-    (promoted as unknown as { state: { tierIndex: number } }).state.tierIndex = 1;
+    promoted.tryPromote();
+    const perUnit = getTier(promoted.current.tierIndex).powerPerUnit;
+    expect(perUnit).toBeGreaterThan(1);
     promoted.applyGate(plus20);
-    expect(promoted.combatPower).toBe(12_000);
+    expect(promoted.combatPower).toBe(10_000 + 20 * perUnit);
   });
 });

@@ -4,7 +4,8 @@
 > technische Übersetzung davon: Architektur, Datenmodelle, Reihenfolge, Risiken,
 > Annahmen. Es wird pro Phase fortgeschrieben.
 
-Stand: Phasen 1 bis 3 abgeschlossen. Phasen 4–9 offen.
+Stand: Phasen 1 bis 3 abgeschlossen, dazu das Kontrollpunkt-Zwischenspiel
+aus Phase 6 vorgezogen. Phasen 4, 5 und 7–9 offen.
 
 ---
 
@@ -435,3 +436,81 @@ Sekunden erreichbar statt in Minuten — für Bosse ab Phase 4 dasselbe.
 
 Keine Gegner, keinen Kampf, keine echten Sektortypen. Der Kontrollpunkt ist
 weiterhin nur die 220-Meter-Grenze; ab Phase 5 setzt ihn der RunDirector.
+
+
+---
+
+## 10. Nachbesserung — Beförderung sichtbar machen, Zwischenspiel einbauen
+
+### Der Befund aus dem Spieltest
+
+„Die Beförderung sehe ich nicht passieren nach 140." Zu Recht — das war ein
+Konstruktionsfehler, kein Zufall:
+
+| | mit 100:1 |
+|---|---|
+| Truppe optisch voll (140 Figuren) | bei Power 140 |
+| Beförderung | erst bei Power 1.200 |
+| Abstand | **8,6× zu spät**, auf jeder Stufe |
+
+Der Spieler sah einen vollen Bildschirm, sammelte weiter und es passierte
+nichts. Die Ursache ist das Verhältnis 100:1 aus der Spezifikation. Es
+verträgt sich nicht mit einem Renderbudget von 140 Figuren: Entweder man
+befördert bei 140 und bekommt **1,4** Soldaten der nächsten Stufe, oder man
+wartet bis 1.200 und die Truppe steht 8,6× lang still.
+
+### Die Entscheidung: 10:1 statt 100:1
+
+Damit fällt die Beförderung **genau dort, wo die Truppe voll ist**, und
+hinterlässt einen sichtbaren Trupp von 14 Einheiten. Die Schwelle ist nicht
+mehr gesetzt, sondern aus dem Renderbudget abgeleitet — ändert jemand den
+Deckel, verschiebt sie sich automatisch mit.
+
+Das weicht bewusst von der Spezifikation ab (dort: „100 Militia = 1
+Rifleman"). Deren eigene Forderung — „Die Armee soll sich nach Promotion
+mächtiger anfühlen, nicht schwächer" — ist mit 100:1 und einem 140er-Deckel
+nicht erfüllbar. Die Zahlen waren als Vorschlag gekennzeichnet.
+
+Folge: Beförderung wird vom seltenen Ereignis zum **Takt der Runde** — erste
+nach 24 s, danach etwa alle 35 s, rund sieben in einer langen Runde. Die
+Tier-Liste wurde dafür auf zwölf Stufen verlängert; eine reguläre Runde
+verbraucht sieben, der Rest bleibt dem Endlosmodus. Ab Phase 4 kosten Gegner
+Kampfkraft und flachen die Kurve ab — dann ist die Stufenzahl erneut zu
+prüfen.
+
+### Das Zwischenspiel am Kontrollpunkt
+
+Statt still stärker zu werden, hält die Runde an und legt drei Karten hin.
+
+- **Drei verschiedene Arten**, nie dieselbe zweimal. Dreimal dieselbe Wirkung
+  in drei Stufen wäre keine Wahl, sondern eine Preisliste.
+- **Vier Seltenheiten** (common / rare / epic / legendary), deren Gewichte im
+  Lauf der Runde nach oben wandern — späte Karten sollen sich anders anfühlen
+  als die ersten.
+- **Beschreibung aus dem Wert erzeugt**, nie danebengeschrieben — dasselbe
+  Prinzip wie bei den Toraufschriften.
+- **Obergrenzen beim Stapeln.** Ohne sie stapeln sich vier legendäre Schilde
+  zu völliger Unverwundbarkeit und die Torwahl verliert ihren Sinn.
+- Erste Ziehung am ersten Kontrollpunkt (24 s), danach jeder zweite (~49 s).
+
+Seltenheit ist der **einzige** Ort im Spiel, an dem Farbe eine Wertung
+ausdrückt. Bei den Toren ist genau das verboten.
+
+### Warum „schneller schießen" noch fehlt
+
+Die sechs ausgelieferten Karten wirken alle sofort: Rekruten, Torertrag,
+Torschutz, Tempo, Lenkung, Beförderungsschwelle. Feuerrate, Schaden und
+Rüstung fehlen bewusst — es gibt keine Gegner, auf die sie wirken könnten,
+und eine Karte, die nichts tut, wäre eine Lüge. Die Felder stehen bereits in
+`RunModifiers`, damit das Kampfsystem in Phase 4 nur lesen muss.
+
+### Gefundene und behobene Fehler
+
+- **Beförderungsbanner lief hinter der Auswahl weiter** und blendete nie aus,
+  weil seine Laufzeit an der pausierten Spieluhr hing. Beides gehört zum
+  selben Kontrollpunkt und steht jetzt in einem Fenster.
+- **Erste Ziehung fiel auf Sektor 2** (49 s) statt auf den ersten
+  Kontrollpunkt.
+- **Wachstumskarten hätten Strafen verstärkt**: ein naiver Faktor auf
+  `×0.5` hätte daraus eine Verbesserung gemacht. Zugewinn und Strafe werden
+  getrennt verrechnet.
