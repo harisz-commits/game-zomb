@@ -16,12 +16,20 @@ export interface CombatInput {
   armor: number;
 }
 
+/** Schaden, der statt an die Horde an den Boss geht. */
+export interface BossTarget {
+  /** Nimmt Schaden entgegen; liefert true, wenn er dadurch stirbt. */
+  damage: (amount: number) => boolean;
+}
+
 export interface CombatOutcome {
   /** Kampfkraft, die die Armee in diesem Schritt verloren hat. */
   powerLost: number;
   kills: number;
   /** Zahl der feuernden Ziele — treibt das Mündungsfeuer. */
   engaged: number;
+  /** Hat dieser Schritt den Boss erledigt? */
+  bossKilled: boolean;
 }
 
 /**
@@ -36,8 +44,12 @@ export interface CombatOutcome {
  *  - Die Armee verteilt ihren Schaden auf die nächsten Ziele in Reichweite.
  *  - Jeder Zombie, der die Truppe erreicht, frisst Kampfkraft.
  */
-export function resolveCombat(input: CombatInput, enemies: EnemyManager): CombatOutcome {
-  const outcome: CombatOutcome = { powerLost: 0, kills: 0, engaged: 0 };
+export function resolveCombat(
+  input: CombatInput,
+  enemies: EnemyManager,
+  boss?: BossTarget | null,
+): CombatOutcome {
+  const outcome: CombatOutcome = { powerLost: 0, kills: 0, engaged: 0, bossKilled: false };
   if (input.dt <= 0 || input.combatPower <= 0) return outcome;
 
   const tier = getTier(input.tierIndex);
@@ -51,9 +63,17 @@ export function resolveCombat(input: CombatInput, enemies: EnemyManager): Combat
 
   const targets = enemies.targets(input.armyZ, COMBAT.maxTargets);
   outcome.engaged = targets.length;
+  const step = dps * input.dt;
 
-  if (targets.length > 0) {
-    outcome.kills += spreadDamage(targets, dps * input.dt, enemies);
+  if (boss) {
+    // Im Bosskampf teilt sich das Feuer: Die Gerufenen dürfen nicht
+    // ungestört durchlaufen, aber der Boss bleibt das Hauptziel — sonst
+    // hielte ihn ein Dauerstrom von Minions unsterblich.
+    const toHorde = targets.length > 0 ? step * 0.35 : 0;
+    if (toHorde > 0) outcome.kills += spreadDamage(targets, toHorde, enemies);
+    outcome.bossKilled = boss.damage(step - toHorde);
+  } else if (targets.length > 0) {
+    outcome.kills += spreadDamage(targets, step, enemies);
   }
 
   const biting = enemies.contacting(input.armyX, input.armyZ, input.armyHalfWidth);

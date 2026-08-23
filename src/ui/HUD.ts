@@ -32,6 +32,9 @@ export class HUD {
   private readonly overflowFill: HTMLElement;
   private readonly banner: HTMLElement;
   private bannerUntil = 0;
+  private readonly bossBox: HTMLElement;
+  private readonly bossName: HTMLElement;
+  private readonly bossFill: HTMLElement;
 
   constructor(parent: HTMLElement) {
     this.layer = new UiLayer(parent, 'hud');
@@ -71,6 +74,31 @@ export class HUD {
     progress.appendChild(bar);
 
     this.banner = this.layer.add(el('div', 'hud-banner'));
+
+    // Bosszeile: eigene Leiste ganz oben, damit sie nicht mit dem
+    // Sektorfortschritt verwechselt wird.
+    this.bossBox = this.layer.add(el('div', 'hud-boss'));
+    this.bossName = el('div', 'hud-boss-name', '');
+    const bossBar = el('div', 'hud-boss-bar');
+    this.bossFill = el('i', 'hud-boss-fill');
+    bossBar.appendChild(this.bossFill);
+    this.bossBox.appendChild(this.bossName);
+    this.bossBox.appendChild(bossBar);
+  }
+
+  /** Zeigt oder verbirgt die Lebensleiste des Bosses. */
+  renderBoss(name: string | null, hpRatio: number): void {
+    // Bosskampf und Sektorfortschritt teilen sich den Platz unter dem HUD.
+    // Beide gleichzeitig standen übereinander und waren unlesbar — und
+    // während eines Bosskampfes steht der Sektor ohnehin still.
+    this.layer.root.classList.toggle('boss-active', name !== null);
+    if (!name) {
+      this.bossBox.classList.remove('visible');
+      return;
+    }
+    this.bossBox.classList.add('visible');
+    this.bossName.textContent = name.toUpperCase();
+    this.bossFill.style.width = `${Math.max(0, Math.min(1, hpRatio)) * 100}%`;
   }
 
   /**

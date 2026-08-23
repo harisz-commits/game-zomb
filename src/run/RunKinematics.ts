@@ -24,6 +24,13 @@ export class RunKinematics {
   speedMultiplier = 1;
   /** Faktor auf die Lenkgeschwindigkeit (Karte „Drill Training"). */
   steeringMultiplier = 1;
+  /**
+   * Hält die Vorwärtsbewegung an — die Bossarena.
+   *
+   * Gelenkt wird weiter: Ausweichen ist im Bosskampf die einzige Handhabe,
+   * die dem Spieler bleibt.
+   */
+  forwardHeld = false;
 
   /** Lateralgeschwindigkeit in m/s — treibt Neigung und Formation. */
   lateralVelocity = 0;
@@ -35,6 +42,7 @@ export class RunKinematics {
     this.lateralVelocity = 0;
     this.speedMultiplier = 1;
     this.steeringMultiplier = 1;
+    this.forwardHeld = false;
   }
 
   /**
@@ -62,7 +70,9 @@ export class RunKinematics {
     );
     this.lateralVelocity = dt > 0 ? (this.x - previousX) / dt : 0;
 
-    this.distance += MOVEMENT.forwardSpeed * this.speedMultiplier * dt;
+    if (!this.forwardHeld) {
+      this.distance += MOVEMENT.forwardSpeed * this.speedMultiplier * dt;
+    }
   }
 
   /** Normalisierte Lateralposition [-1, 1] — fuer Kamera und HUD. */

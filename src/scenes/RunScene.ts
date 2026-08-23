@@ -15,6 +15,9 @@ import { EnemyManager } from '../enemies/EnemyManager';
 import { ZombieSpawner } from '../enemies/ZombieSpawner';
 import { resolveCombat } from '../combat/CombatSystem';
 import { HordeRenderer } from './playfield/HordeRenderer';
+import { BossManager } from '../enemies/BossManager';
+import { BossRenderer } from './playfield/BossRenderer';
+import { BOSS_RULES } from '../config/bosses';
 import { threatLevelForSector } from '../config/levelCurves';
 import { ArmyManager } from '../army/ArmyManager';
 import { FormationLayout } from '../army/FormationSystem';
@@ -65,6 +68,7 @@ export class RunScene extends GameScene {
   private crowd: CrowdRenderer | null = null;
   private gateRenderer: GateRenderer | null = null;
   private horde: HordeRenderer | null = null;
+  private bossRenderer: BossRenderer | null = null;
   private hud: HUD | null = null;
   private debug: DebugOverlay | null = null;
 
@@ -75,8 +79,12 @@ export class RunScene extends GameScene {
   private gates!: GateSystem;
   private draftRng!: Random;
   private readonly enemies = new EnemyManager();
+  private readonly boss = new BossManager();
   private spawner!: ZombieSpawner;
   private kills = 0;
+  private bossesKilled = 0;
+  /** Sektor, für den zuletzt ein Boss aufgestellt wurde. */
+  private lastBossSector = -1;
 
   private elapsed = 0;
   private sectorIndex = 0;
@@ -110,6 +118,7 @@ export class RunScene extends GameScene {
     this.crowd = new CrowdRenderer(scene);
     this.gateRenderer = new GateRenderer(scene);
     this.horde = new HordeRenderer(scene);
+    this.bossRenderer = new BossRenderer(scene);
 
     const seed = createSeed();
     this.modifiers.reset();
@@ -117,7 +126,10 @@ export class RunScene extends GameScene {
     this.gates = new GateSystem(seed);
     this.spawner = new ZombieSpawner(seed ^ 0x51ed270b);
     this.enemies.reset();
+    this.boss.reset();
     this.kills = 0;
+    this.bossesKilled = 0;
+    this.lastBossSector = -1;
     // Eigener Zufallsstrom für die Karten: sonst verschöbe jede zusätzliche
     // Ziehung die gesamte Torfolge.
     this.draftRng = new Random(seed ^ 0x9e3779b9);
@@ -202,11 +214,21 @@ export class RunScene extends GameScene {
    */
   private updateCombat(dt: number): void {
     const threat = threatLevelForSector(this.sectorIndex);
+    this.placeBossIfDue(threat);
+
     for (const wave of this.spawner.due(this.kinematics.distance, threat)) {
       this.enemies.spawn(wave);
     }
 
     this.enemies.update(dt, this.kinematics.x, this.kinematics.distance, this.army.combatPower);
+
+    const bossTick = this.boss.update(dt, this.kinematics.distance, this.army.combatPower);
+    if (bossTick.damageToArmy > 0) {
+      const mitigated = bossTick.damageToArmy * (1 - Math.min(0.9, this.modifiers.armor));
+      this.army.damage(mitigated);
+      this.bossRenderer?.punch();
+    }
+    if (bossTick.summoned) this.summonMinions();
 
     const outcome = resolveCombat(
       {
@@ -221,10 +243,56 @@ export class RunScene extends GameScene {
         armor: this.modifiers.armor,
       },
       this.enemies,
+      // NUR wenn der Kampf wirklich läuft. Ein bloß aufgestellter Boss ist
+      // noch zwanzig Sekunden entfernt und nicht scharf — Feuer auf ihn
+      // verschwände spurlos, während die Horde ungestört durchliefe.
+      this.boss.engaged && this.boss.blocking ? this.boss : null,
     );
 
     this.kills += outcome.kills;
+    if (outcome.bossKilled) {
+      this.bossesKilled += 1;
+      this.hud?.showPromotion('Boss down', this.elapsed);
+    }
     if (outcome.powerLost > 0) this.army.damage(outcome.powerLost);
+
+    // Die Arena hält die Fahrt an, solange der Boss steht.
+    this.kinematics.forwardHeld =
+      this.boss.blocking && this.kinematics.distance >= this.boss.arenaZ;
+  }
+
+  /** Stellt am Ende jedes n-ten Sektors einen Boss auf die Strecke. */
+  private placeBossIfDue(threat: number): void {
+    const sector = this.sectorIndex;
+    if (sector === this.lastBossSector) return;
+    if ((sector + 1) % BOSS_RULES.everySectors !== 0) return;
+    this.lastBossSector = sector;
+    this.boss.place((sector + 1) * RUN.sectorLengthMeters, threat);
+  }
+
+  /**
+   * Der Boss ruft Zombies. Sie erscheinen bei ihm, nicht neben der Armee —
+   * sonst käme die Verstärkung aus dem Nichts direkt in den Rücken.
+   */
+  private summonMinions(): void {
+    const boss = this.boss.current;
+    if (!boss) return;
+    const count = BOSS_RULES.summonCount;
+    this.enemies.spawn({
+      index: -1,
+      z: boss.z,
+      threat: 0,
+      members: Array.from({ length: count }, (_, i) => ({
+        archetype: 'runner' as const,
+        // Versetzt statt in Reih und Glied — eine exakte Linie sieht
+        // aus wie ein Aufstellungsfehler, nicht wie eine Horde.
+        x: -4 + (8 * i) / Math.max(1, count - 1) + (i % 3) * 0.4 - 0.4,
+        z: boss.z - 3 - (i % 4) * 1.6,
+        speed: 5.4,
+        hpShare: BOSS_RULES.summonHpShare / count,
+        damageShare: BOSS_RULES.summonDamageShare / count,
+      })),
+    });
   }
 
   private reachCheckpoint(): void {
@@ -290,6 +358,11 @@ export class RunScene extends GameScene {
     );
     this.gateRenderer?.sync(this.gates.active, this.kinematics.distance);
     this.horde?.update(this.enemies.all, this.elapsed);
+    this.bossRenderer?.update(this.boss.current, 1 / 60, this.elapsed);
+    this.hud?.renderBoss(
+      this.boss.engaged ? this.boss.current!.spec.name : null,
+      this.boss.hpRatio,
+    );
 
     const progress = clamp(
       (this.kinematics.distance % RUN.sectorLengthMeters) / RUN.sectorLengthMeters,
@@ -328,6 +401,7 @@ export class RunScene extends GameScene {
     this.crowd = null;
     this.gateRenderer = null;
     this.horde = null;
+    this.bossRenderer = null;
     this.camera = null;
     this.hud = null;
     this.debug = null;
@@ -345,7 +419,7 @@ export class RunScene extends GameScene {
       stats: {
         sectorsCleared: this.sectorIndex,
         kills: this.kills,
-        bossesKilled: 0,
+        bossesKilled: this.bossesKilled,
         peakTierIndex: this.army.peakTierIndex,
         peakCombatPower: this.army.peakCombatPower,
         coinsEarned: 0,

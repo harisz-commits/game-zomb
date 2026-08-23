@@ -111,7 +111,7 @@ describe('wave spawning', () => {
 describe('combat resolution', () => {
   it('does nothing without enemies', () => {
     const outcome = resolveCombat(baseInput(), new EnemyManager());
-    expect(outcome).toEqual({ powerLost: 0, kills: 0, engaged: 0 });
+    expect(outcome).toEqual({ powerLost: 0, kills: 0, engaged: 0, bossKilled: false });
   });
 
   it('shoots only what is in range and in front', () => {

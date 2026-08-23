@@ -4,8 +4,8 @@
 > technische Übersetzung davon: Architektur, Datenmodelle, Reihenfolge, Risiken,
 > Annahmen. Es wird pro Phase fortgeschrieben.
 
-Stand: Phasen 1 bis 3 abgeschlossen, Phase 4 bis auf den Boss. Dazu das
-Kontrollpunkt-Zwischenspiel aus Phase 6 vorgezogen. Phasen 5 und 7–9 offen.
+Stand: Phasen 1 bis 4 abgeschlossen, dazu das Kontrollpunkt-Zwischenspiel
+aus Phase 6 vorgezogen. Phasen 5 und 7–9 offen.
 
 ---
 
@@ -182,7 +182,7 @@ Log-Warnung (verhindert korrupte Zustände).
 | 1 | Setup, PlatformService, Szenen-Gerüst, Kamera + Lane-Prototyp | **fertig** |
 | 2 | Auto-Vorwärtsbewegung, Lateral-Steuerung, Crowd-Instancing, erste Gates | **fertig** |
 | 3 | CombatPower, Tier-System, Promotion, Overflow, HUD-Anbindung | **fertig** |
-| 4 | Zombie-Archetypen, aggregiertes Kampfsystem, Hit-Feedback, Boss-Prototyp | **teilweise** (Boss offen) |
+| 4 | Zombie-Archetypen, aggregiertes Kampfsystem, Boss | **fertig** |
 | 5 | Sektoren, RunDirector, Supply Drops, Hazards, Checkpoints, Results | offen |
 | 6 | Coins, UpgradeTree, Unlocks, Save/Load produktiv | offen |
 | 7 | EndlessDirector, Threat-Eskalation, Score | offen |
@@ -589,3 +589,63 @@ Grenze 220.
 Der Boss. Ebenso Spitter und Exploder — beide brauchen Projektile
 beziehungsweise Explosionen, die es noch nicht gibt. Mündungsfeuer und
 Treffereffekte sind Phase 9.
+
+
+---
+
+## 12. Der Boss
+
+### Arena statt Mitlaufen
+
+Ein Boss ist kein besonders zäher Zombie, sondern ein Bruch im Rhythmus: Die
+Fahrt hält an, und die ganze angesammelte Feuerkraft trifft auf eine einzige
+Lebensleiste. Liefe er einfach mit, wäre er nur ein Brute mit mehr Punkten.
+
+Alle drei Sektoren wartet einer am Sektorende. Gelenkt wird in der Arena
+weiter — Ausweichen ist die einzige Handhabe, die dem Spieler im Kampf
+bleibt. Drei Phasen bei 66 % und 33 % der Lebenspunkte: Je näher das Ende,
+desto schneller schlägt er zu und desto häufiger ruft er Verstärkung. Ein
+Phasenwechsel unterbricht den laufenden Takt, damit der neue Abschnitt sofort
+spürbar ist.
+
+Wie eine Welle bekommt er seine Werte erst beim Betreten der Arena — sonst
+stünde am Sektorende ein Gegner, der zur Armee von vor zwanzig Sekunden passt.
+
+### Gemessene Balance (20 Läufe je Zelle)
+
+| | gutes Spiel | blindes Spiel |
+|---|---|---|
+| 140 s | 1/20 Tode, 1 Boss | 13/20 Tode |
+| 200 s | 3/20 Tode, 2 Bosse | 18/20 Tode |
+| 260 s | 3/20 Tode, 3 Bosse | 18/20 Tode |
+
+Der erste Boss kostet im Median **30 % der Kampfkraft** — der Zielkorridor
+liegt zwischen 15 % und 55 %: darunter ist er Kulisse, darüber beendet er die
+Runde. Alles davon ist als Test verankert.
+
+### Zwei Fehler, die nur die Messung zeigte
+
+Beide wurden gefunden, weil der Boss in die Balance-Simulation aufgenommen
+wurde, statt ihn nach Augenmaß abzustimmen.
+
+1. **Die Feuerkraft versickerte.** `blocking` war schon wahr, sobald ein Boss
+   AUFGESTELLT wurde — zwanzig Sekunden bevor die Armee ihn erreichte. In
+   dieser Zeit leitete das Kampfsystem 65 % des Feuers an einen noch nicht
+   scharfen Boss um, wo es spurlos verschwand; die Horde lief ungestört durch,
+   und die Armee erreichte die Arena bereits ausgezehrt. Ziel ist jetzt nur
+   ein Boss, dessen Kampf tatsächlich läuft.
+2. **Die Gerufenen töteten jeden Lauf.** Sieben Runner trugen zusammen zehn
+   Prozent der Armeestärke **pro Sekunde** an Bissschaden — mehr als eine
+   ganze reguläre Welle aus dreißig Zombies. Vor der Korrektur starben 20 von
+   20 Läufen am ersten Boss, danach fallen 19 von 20 Bossen. Gerufene sind
+   Störfeuer, die Gefahr ist der Boss.
+
+Dazu ein Anzeigefehler: Die Lebensleiste erschien beim Aufstellen und stand
+zwanzig Sekunden lang auf null. Sie erscheint jetzt mit dem ersten Schlag und
+nimmt den Platz der Sektorleiste ein — beide übereinander waren unlesbar, und
+während eines Bosskampfes steht der Sektor ohnehin still.
+
+### Leistung
+
+21–22 Draw Calls von 30. Der Boss ist ein einzelnes Mesh; es gibt nie zwei
+gleichzeitig.
