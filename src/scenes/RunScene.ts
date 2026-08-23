@@ -18,6 +18,8 @@ import { HordeRenderer } from './playfield/HordeRenderer';
 import { BossManager } from '../enemies/BossManager';
 import { BossRenderer } from './playfield/BossRenderer';
 import { BOSS_RULES } from '../config/bosses';
+import { RunDirector } from '../run/RunDirector';
+import type { SectorPlan } from '../run/SectorGenerator';
 import { threatLevelForSector } from '../config/levelCurves';
 import { ArmyManager } from '../army/ArmyManager';
 import { FormationLayout } from '../army/FormationSystem';
@@ -28,7 +30,7 @@ import { DRAFT } from '../config/upgrades';
 import { HUD } from '../ui/HUD';
 import { DebugOverlay } from '../ui/DebugOverlay';
 import { UiLayer, button } from '../ui/dom';
-import { ARMY, RENDER, RUN } from '../config/gameBalance';
+import { ARMY, RENDER } from '../config/gameBalance';
 import { Random, createSeed } from '../util/Random';
 import { clamp } from '../util/math';
 import { IS_DEV } from '../core/Config';
@@ -81,10 +83,13 @@ export class RunScene extends GameScene {
   private readonly enemies = new EnemyManager();
   private readonly boss = new BossManager();
   private spawner!: ZombieSpawner;
+  private director!: RunDirector;
+  private sector!: SectorPlan;
   private kills = 0;
   private bossesKilled = 0;
   /** Sektor, für den zuletzt ein Boss aufgestellt wurde. */
   private lastBossSector = -1;
+  private victory = false;
 
   private elapsed = 0;
   private sectorIndex = 0;
@@ -122,14 +127,17 @@ export class RunScene extends GameScene {
 
     const seed = createSeed();
     this.modifiers.reset();
+    this.director = new RunDirector(seed, this.ctx.state.mode);
+    this.sector = this.director.sector(0);
     this.army = new ArmyManager(this.ctx.bus, startingPower(), this.modifiers);
-    this.gates = new GateSystem(seed);
-    this.spawner = new ZombieSpawner(seed ^ 0x51ed270b);
+    this.gates = new GateSystem(seed, this.director);
+    this.spawner = new ZombieSpawner(seed ^ 0x51ed270b, this.director);
     this.enemies.reset();
     this.boss.reset();
     this.kills = 0;
     this.bossesKilled = 0;
     this.lastBossSector = -1;
+    this.victory = false;
     // Eigener Zufallsstrom für die Karten: sonst verschöbe jede zusätzliche
     // Ziehung die gesamte Torfolge.
     this.draftRng = new Random(seed ^ 0x9e3779b9);
@@ -157,9 +165,9 @@ export class RunScene extends GameScene {
       this.onExit(() => debug.dispose());
     }
 
-    // Vorläufiger Abbruchknopf, bis Sektoren ein echtes Rundenende setzen.
+    // Abbruch, nicht Abschluss: Eine Runde endet regulär am Schlussboss.
     const controls = new UiLayer(this.ctx.uiRoot, 'run-controls');
-    controls.add(button('End run', () => this.finishRun(false), 'ghost'));
+    controls.add(button('Quit', () => this.finishRun(false), 'ghost'));
     this.onExit(() => controls.dispose());
 
     this.ctx.bus.emit('run:started', { mode: this.ctx.state.mode, seed });
@@ -184,9 +192,10 @@ export class RunScene extends GameScene {
 
     this.updateCombat(dt);
 
-    const sector = Math.floor(this.kinematics.distance / RUN.sectorLengthMeters);
-    if (sector !== this.sectorIndex) {
-      this.sectorIndex = sector;
+    const sector = this.director.sectorAt(this.kinematics.distance);
+    if (sector.index !== this.sectorIndex) {
+      this.sectorIndex = sector.index;
+      this.sector = sector;
       this.reachCheckpoint();
     }
 
@@ -252,6 +261,11 @@ export class RunScene extends GameScene {
     this.kills += outcome.kills;
     if (outcome.bossKilled) {
       this.bossesKilled += 1;
+      if (this.director.isVictory(this.sectorIndex, true)) {
+        this.victory = true;
+        this.finishRun(true);
+        return;
+      }
       this.hud?.showPromotion('Boss down', this.elapsed);
     }
     if (outcome.powerLost > 0) this.army.damage(outcome.powerLost);
@@ -261,13 +275,11 @@ export class RunScene extends GameScene {
       this.boss.blocking && this.kinematics.distance >= this.boss.arenaZ;
   }
 
-  /** Stellt am Ende jedes n-ten Sektors einen Boss auf die Strecke. */
+  /** Stellt den Boss auf, sobald der Plan für diesen Sektor einen vorsieht. */
   private placeBossIfDue(threat: number): void {
-    const sector = this.sectorIndex;
-    if (sector === this.lastBossSector) return;
-    if ((sector + 1) % BOSS_RULES.everySectors !== 0) return;
-    this.lastBossSector = sector;
-    this.boss.place((sector + 1) * RUN.sectorLengthMeters, threat);
+    if (this.sectorIndex === this.lastBossSector || !this.sector.hasBoss) return;
+    this.lastBossSector = this.sectorIndex;
+    this.boss.place(this.director.bossZ(this.sectorIndex), threat);
   }
 
   /**
@@ -365,7 +377,7 @@ export class RunScene extends GameScene {
     );
 
     const progress = clamp(
-      (this.kinematics.distance % RUN.sectorLengthMeters) / RUN.sectorLengthMeters,
+      (this.kinematics.distance - this.sector.startZ) / this.sector.length,
       0,
       1,
     );
@@ -376,6 +388,8 @@ export class RunScene extends GameScene {
       overflow: army.overflowProgress,
       sectorProgress: progress,
       sectorIndex: this.sectorIndex,
+      sectorLabel: this.sector.label,
+      totalSectors: this.director.totalSectors,
       elapsedSeconds: this.elapsed,
       kills: this.kills,
     });
@@ -414,10 +428,10 @@ export class RunScene extends GameScene {
 
     const result: RunResult = {
       mode: this.ctx.state.mode,
-      victory,
+      victory: victory || this.victory,
       score: Math.round(this.kinematics.distance * 10 + this.army.peakCombatPower * 5),
       stats: {
-        sectorsCleared: this.sectorIndex,
+        sectorsCleared: this.sectorIndex + (this.victory ? 1 : 0),
         kills: this.kills,
         bossesKilled: this.bossesKilled,
         peakTierIndex: this.army.peakTierIndex,

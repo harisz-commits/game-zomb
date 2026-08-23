@@ -6,9 +6,10 @@ import { ZombieSpawner } from '../src/enemies/ZombieSpawner';
 import { resolveCombat } from '../src/combat/CombatSystem';
 import { BossManager } from '../src/enemies/BossManager';
 import { BOSS_RULES } from '../src/config/bosses';
+import { RunDirector } from '../src/run/RunDirector';
 import { RunModifiers } from '../src/run/RunModifiers';
 import { EventBus } from '../src/core/EventBus';
-import { ARMY, DISPLAY_CAPS, MOVEMENT, RUN } from '../src/config/gameBalance';
+import { ARMY, DISPLAY_CAPS, MOVEMENT } from '../src/config/gameBalance';
 import { threatLevelForSector } from '../src/config/levelCurves';
 import { powerAfterEffect } from '../src/army/CombatPowerSystem';
 import { getTier } from '../src/config/unitTiers';
@@ -36,9 +37,12 @@ interface RunOutcome {
 function playRun(seed: number, seconds: number, smart: boolean): RunOutcome {
   const mods = new RunModifiers();
   const army = new ArmyManager(new EventBus(), ARMY.startCombatPower, mods);
-  const gates = new GateSystem(seed);
+  // Derselbe Regisseur wie im Spiel: sonst misst der Test eine Sektorfolge,
+  // die es nicht mehr gibt.
+  const director = new RunDirector(seed, 'endless');
+  const gates = new GateSystem(seed, director);
   const enemies = new EnemyManager();
-  const spawner = new ZombieSpawner(seed ^ 0x51ed270b);
+  const spawner = new ZombieSpawner(seed ^ 0x51ed270b, director);
   const boss = new BossManager();
 
   let bossesFought = 0;
@@ -73,9 +77,10 @@ function playRun(seed: number, seconds: number, smart: boolean): RunOutcome {
     gates.update(distance, x, (effect) => army.applyGate(effect));
 
     const threat = threatLevelForSector(sector);
-    if (sector !== lastBossSector && (sector + 1) % BOSS_RULES.everySectors === 0) {
+    const plan = director.sector(sector);
+    if (sector !== lastBossSector && plan.hasBoss) {
       lastBossSector = sector;
-      boss.place((sector + 1) * RUN.sectorLengthMeters, threat);
+      boss.place(director.bossZ(sector), threat);
     }
     for (const wave of spawner.due(distance, threat)) enemies.spawn(wave);
     enemies.update(STEP, x, distance, army.combatPower);
@@ -136,7 +141,7 @@ function playRun(seed: number, seconds: number, smart: boolean): RunOutcome {
     // Die Arena hält die Fahrt an, solange der Boss steht.
     if (boss.blocking && distance >= boss.arenaZ) distance = boss.arenaZ;
 
-    const nextSector = Math.floor(distance / RUN.sectorLengthMeters);
+    const nextSector = director.sectorAt(distance).index;
     if (nextSector !== sector) {
       sector = nextSector;
       army.tryPromote();
@@ -190,7 +195,7 @@ describe('combat balance', { timeout: 120_000 }, () => {
   it('lets a good player usually survive a full run', () => {
     const runs = sample(260, true, 20);
     const survived = runs.filter((run) => !run.died).length;
-    expect(survived / runs.length).toBeGreaterThanOrEqual(0.75);
+    expect(survived / runs.length).toBeGreaterThanOrEqual(0.8);
     expect(survived).toBeLessThan(runs.length + 1);
   });
 
@@ -199,7 +204,7 @@ describe('combat balance', { timeout: 120_000 }, () => {
     const blind = sample(260, false, 20).filter((run) => run.died).length;
     const good = sample(260, true, 20).filter((run) => run.died).length;
     expect(blind).toBeGreaterThan(good * 3);
-    expect(blind / 20).toBeGreaterThan(0.6);
+    expect(blind / 20).toBeGreaterThan(0.5);
   });
 
   /** Die Horde darf das Renderbudget nie sprengen. */

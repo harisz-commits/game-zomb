@@ -7,6 +7,7 @@ import {
   nominalFactor,
 } from '../config/gates';
 import { Random } from '../util/Random';
+import { NEUTRAL_PACING, type SectorPacing } from './SectorGenerator';
 
 /** Wie ein Torpaar zusammengesetzt ist — bestimmt, was auf dem Spiel steht. */
 export type GatePairing = 'both-positive' | 'mixed' | 'both-negative';
@@ -40,7 +41,11 @@ export class GateSystem {
   private nextGateZ = GATE_LAYOUT.firstGateMeters;
   private nextId = 0;
 
-  constructor(seed: number) {
+  constructor(
+    seed: number,
+    /** Bestimmt, wie dicht die Tore im jeweiligen Sektor stehen. */
+    private readonly pacing: SectorPacing = NEUTRAL_PACING,
+  ) {
     this.rng = new Random(seed);
   }
 
@@ -73,7 +78,10 @@ export class GateSystem {
     const horizon = distance + GATE_LAYOUT.lookaheadMeters;
     while (this.nextGateZ <= horizon) {
       this.gates.push(this.createGate(this.nextGateZ, this.nextId));
-      this.nextGateZ += GATE_LAYOUT.spacingMeters;
+      // Der Abstand richtet sich nach dem Sektor, in dem das NÄCHSTE Tor
+      // landet — nicht nach dem, in dem die Armee gerade steht.
+      this.nextGateZ +=
+        GATE_LAYOUT.spacingMeters * this.pacing.gateSpacingScaleAt(this.nextGateZ);
     }
   }
 

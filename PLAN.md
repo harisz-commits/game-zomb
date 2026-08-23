@@ -4,8 +4,8 @@
 > technische Übersetzung davon: Architektur, Datenmodelle, Reihenfolge, Risiken,
 > Annahmen. Es wird pro Phase fortgeschrieben.
 
-Stand: Phasen 1 bis 4 abgeschlossen, dazu das Kontrollpunkt-Zwischenspiel
-aus Phase 6 vorgezogen. Phasen 5 und 7–9 offen.
+Stand: Phasen 1 bis 5 abgeschlossen (ohne Supply Drops und Hazards), dazu
+das Kontrollpunkt-Zwischenspiel aus Phase 6 vorgezogen. Phasen 6–9 offen.
 
 ---
 
@@ -183,7 +183,7 @@ Log-Warnung (verhindert korrupte Zustände).
 | 2 | Auto-Vorwärtsbewegung, Lateral-Steuerung, Crowd-Instancing, erste Gates | **fertig** |
 | 3 | CombatPower, Tier-System, Promotion, Overflow, HUD-Anbindung | **fertig** |
 | 4 | Zombie-Archetypen, aggregiertes Kampfsystem, Boss | **fertig** |
-| 5 | Sektoren, RunDirector, Supply Drops, Hazards, Checkpoints, Results | offen |
+| 5 | Sektoren, RunDirector, Checkpoints, Results | **fertig** (Supply Drops & Hazards offen) |
 | 6 | Coins, UpgradeTree, Unlocks, Save/Load produktiv | offen |
 | 7 | EndlessDirector, Threat-Eskalation, Score | offen |
 | 8 | YouTubePlatformService real, Ads, Lifecycle, Score-Submit | offen |
@@ -649,3 +649,80 @@ während eines Bosskampfes steht der Sektor ohnehin still.
 
 21–22 Draw Calls von 30. Der Boss ist ein einzelnes Mesh; es gibt nie zwei
 gleichzeitig.
+
+
+---
+
+## 13. Phase 5 — Der Regisseur
+
+### Sektortypen als Regler, nicht als Code
+
+Bis hierher war jeder Abschnitt derselbe: dieselbe Mischung aus Toren und
+Wellen, alle 220 Meter aufs Neue. Eine Runde von vier Minuten war nach
+dreißig Sekunden erzählt.
+
+Jeder Sektortyp verschiebt jetzt dieselben drei Regler in eine andere
+Richtung — Tordichte, Wellendichte, Wellenwucht:
+
+| Typ | Charakter |
+|---|---|
+| Supply Line | dichte Torfolge, kaum Widerstand — der Abschnitt zum Wachsen |
+| Overrun | kaum Tore, Welle auf Welle |
+| Ruins | ausgeglichen |
+| Elite Hunt | wenige, aber schwere Begegnungen |
+| Last Stand | Dauerbeschuss auf kurzer Strecke |
+| Boss | die Arena |
+
+Ein neuer Typ braucht deshalb keinen neuen Code, nur eine neue Zeile.
+
+### Der RunDirector
+
+Er kennt als Einziger die Abfolge und beantwortet allen anderen Systemen
+dieselbe Frage: „Was gilt an dieser Stelle der Strecke?" Entscheidend ist,
+dass er auch nach Positionen **weit voraus** gefragt werden kann — Tore und
+Wellen werden bis zu zweihundert Meter im Voraus gesetzt und müssen wissen,
+in welchem Abschnitt sie landen. Sonst trüge der Bosssektor die Tordichte
+des Abschnitts, in dem die Armee gerade steht.
+
+`GateSystem` und `ZombieSpawner` kennen den Director nicht; sie sehen nur
+eine schmale Schnittstelle mit drei Fragen. Tests reichen dafür eine
+Attrappe.
+
+Zwei Plätze sind fest vergeben: Der erste Sektor ist immer ein Tor-Sektor
+(wer mit „Overrun" beginnt, lernt die Torwahl nie kennen), und jeder dritte
+endet mit einem Boss.
+
+### Ein echtes Ende
+
+Eine endliche Runde schließt mit einem Bosssektor — sie endet mit einem
+Gegner, nicht mit einer Ziellinie. Sieg gibt es nur, wenn der Schlussboss
+fällt, nicht schon beim Überfahren einer Distanzmarke; sonst könnte man an
+ihm vorbeilaufen. Der Knopf heißt jetzt „Quit" statt „End run": Er ist der
+Abbruch, nicht der vorgesehene Weg zum Abschluss.
+
+Gemessener Kampagnenlauf: **1:58 bis 2:13** über fünf Sektoren, zwei Bosse,
+rund 200–260 erledigte Zombies. Damit liegt eine Runde im Zielkorridor der
+Spezifikation.
+
+### Neu abgestimmt
+
+Der Director machte das Spiel zunächst deutlich schwerer — kürzere Sektoren
+lassen die Gefahrenstufe schneller steigen, und Kampfsektoren brachten 60 %
+mehr Wellen. Die Überlebensrate bei gutem Spiel fiel von 85 % auf 60 %, und
+die erste Minute war nicht mehr folgenlos. Nach dem Herunterstimmen von
+Kampf-, Elite- und Holdout-Sektoren:
+
+| | gutes Spiel | blindes Spiel |
+|---|---|---|
+| 55 s | 0/20 Tode, kein Verlust | 4/20 Tode |
+| 140 s | 0/20 Tode | 11/20 Tode |
+| 260 s | 1/20 Tode | 15/20 Tode |
+
+Die Balance-Simulation benutzt jetzt denselben Director wie das Spiel —
+vorher hätte sie eine Sektorfolge gemessen, die es nicht mehr gibt.
+
+### Was aus Phase 5 noch fehlt
+
+Supply Drops und Hazards. Beide brauchen eine eigene Kollisionsschicht auf
+der Strecke; der Sektortyp „Ruins" ist bereits vorgesehen, unterscheidet
+sich aber bislang nur über die Regler.

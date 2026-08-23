@@ -11,6 +11,10 @@ export interface HudModel {
   /** Fortschritt [0,1] innerhalb des Sektors. */
   sectorProgress: number;
   sectorIndex: number;
+  /** Name des Sektortyps, z. B. „Overrun". */
+  sectorLabel: string;
+  /** Sektoren insgesamt; `Infinity` im Endlosmodus. */
+  totalSectors: number;
   elapsedSeconds: number;
   kills: number;
 }
@@ -120,7 +124,11 @@ export class HUD {
     this.powerLabel.textContent = `PWR ${formatCompact(model.combatPower)}`;
     this.timeLabel.textContent = formatDuration(model.elapsedSeconds);
     this.killLabel.textContent = model.kills > 0 ? `☠ ${formatCompact(model.kills)}` : '';
-    this.sectorLabel.textContent = `SECTOR ${model.sectorIndex + 1}`;
+    // Im Endlosmodus gibt es kein „von", nur ein Weiter.
+    const position = Number.isFinite(model.totalSectors)
+      ? `${model.sectorIndex + 1}/${model.totalSectors}`
+      : `${model.sectorIndex + 1}`;
+    this.sectorLabel.textContent = `${position} · ${model.sectorLabel.toUpperCase()}`;
     this.progressFill.style.width = `${Math.round(model.sectorProgress * 100)}%`;
     this.overflowFill.style.width = `${Math.round(model.overflow * 100)}%`;
 

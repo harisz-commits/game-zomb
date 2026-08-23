@@ -12,7 +12,9 @@ export function createResultsScreen(parent: HTMLElement, options: ResultsOptions
   const { result } = options;
   const layer = new UiLayer(parent, 'results');
 
-  layer.add(el('div', 'results-title', result.victory ? 'SECTOR SECURED' : 'OVERRUN'));
+  // Eine überstandene Runde verdient ein eigenes Wort — „Sektor gesichert"
+  // klingt nach Zwischenstand, nicht nach Abschluss.
+  layer.add(el('div', 'results-title', result.victory ? 'MISSION COMPLETE' : 'OVERRUN'));
   layer.add(el('div', 'results-score', formatCompact(result.score)));
 
   const rows: Array<[string, string]> = [

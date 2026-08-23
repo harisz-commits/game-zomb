@@ -3,6 +3,7 @@ import { archetypesAtThreat } from '../config/enemyStats';
 import { COMBAT, WAVES } from '../config/combat';
 import { Random } from '../util/Random';
 import { clamp } from '../util/math';
+import { NEUTRAL_PACING, type SectorPacing } from '../run/SectorGenerator';
 
 export interface WaveMember {
   archetype: EnemyArchetypeId;
@@ -37,7 +38,11 @@ export class ZombieSpawner {
   private nextWaveZ = WAVES.firstWaveMeters;
   private nextIndex = 0;
 
-  constructor(seed: number) {
+  constructor(
+    seed: number,
+    /** Bestimmt Dichte und Wucht der Wellen im jeweiligen Sektor. */
+    private readonly pacing: SectorPacing = NEUTRAL_PACING,
+  ) {
     this.rng = new Random(seed);
   }
 
@@ -58,7 +63,8 @@ export class ZombieSpawner {
     const waves: WaveSpawn[] = [];
     while (this.nextWaveZ <= horizon) {
       waves.push(this.build(this.nextWaveZ, threat));
-      this.nextWaveZ += WAVES.spacingMeters;
+      this.nextWaveZ +=
+        WAVES.spacingMeters * this.pacing.waveSpacingScaleAt(this.nextWaveZ);
     }
     return waves;
   }
@@ -71,7 +77,8 @@ export class ZombieSpawner {
   private build(z: number, threat: number): WaveSpawn {
     const intensity = Math.min(
       WAVES.intensityMax,
-      WAVES.intensityStart + threat * WAVES.intensityPerThreat,
+      (WAVES.intensityStart + threat * WAVES.intensityPerThreat) *
+        this.pacing.waveIntensityScaleAt(z),
     );
     const count = Math.round(
       clamp(WAVES.countStart + threat * WAVES.countPerThreat, 1, WAVES.countMax),
