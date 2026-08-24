@@ -19,6 +19,8 @@ import { BossManager } from '../enemies/BossManager';
 import { BossRenderer } from './playfield/BossRenderer';
 import { BOSS_RULES } from '../config/bosses';
 import { RunDirector } from '../run/RunDirector';
+import { applyMetaUpgrades, startingCombatPower } from '../progression/MetaProgression';
+import { computeScore } from '../progression/RewardSystem';
 import type { SectorPlan } from '../run/SectorGenerator';
 import { threatLevelForSector } from '../config/levelCurves';
 import { ArmyManager } from '../army/ArmyManager';
@@ -30,7 +32,8 @@ import { DRAFT } from '../config/upgrades';
 import { HUD } from '../ui/HUD';
 import { DebugOverlay } from '../ui/DebugOverlay';
 import { UiLayer, button } from '../ui/dom';
-import { ARMY, RENDER } from '../config/gameBalance';
+import { RENDER } from '../config/gameBalance';
+import type { SaveData } from '../save/SaveSchema';
 import { Random, createSeed } from '../util/Random';
 import { clamp } from '../util/math';
 import { IS_DEV } from '../core/Config';
@@ -43,11 +46,12 @@ import { IS_DEV } from '../core/Config';
  * späte Spielzustände (Beförderung, später Bosse) erreichbar zu machen,
  * ohne jedes Mal Minuten zu fahren.
  */
-function startingPower(): number {
-  if (!DebugOverlay.isEnabled(IS_DEV)) return ARMY.startCombatPower;
+function startingPower(save: SaveData): number {
+  const fromUpgrades = startingCombatPower(save);
+  if (!DebugOverlay.isEnabled(IS_DEV)) return fromUpgrades;
   const raw = new URLSearchParams(window.location.search).get('power');
   const parsed = raw === null ? Number.NaN : Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : ARMY.startCombatPower;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fromUpgrades;
 }
 
 /**
@@ -127,9 +131,15 @@ export class RunScene extends GameScene {
 
     const seed = createSeed();
     this.modifiers.reset();
+    // Dauerhafte Aufwertungen ZUERST — die Karten am Kontrollpunkt addieren
+    // danach auf dieselben Felder, und die Obergrenzen sollen den Gesamtwert
+    // deckeln, nicht die Reihenfolge.
+    applyMetaUpgrades(this.ctx.state.requireSave(), this.modifiers);
+    this.kinematics.speedMultiplier = this.modifiers.speed;
+    this.kinematics.steeringMultiplier = this.modifiers.steering;
     this.director = new RunDirector(seed, this.ctx.state.mode);
     this.sector = this.director.sector(0);
-    this.army = new ArmyManager(this.ctx.bus, startingPower(), this.modifiers);
+    this.army = new ArmyManager(this.ctx.bus, startingPower(this.ctx.state.requireSave()), this.modifiers);
     this.gates = new GateSystem(seed, this.director);
     this.spawner = new ZombieSpawner(seed ^ 0x51ed270b, this.director);
     this.enemies.reset();
@@ -426,19 +436,23 @@ export class RunScene extends GameScene {
     if (this.finished) return;
     this.finished = true;
 
+    const won = victory || this.victory;
+    const stats = {
+      sectorsCleared: this.sectorIndex + (this.victory ? 1 : 0),
+      kills: this.kills,
+      bossesKilled: this.bossesKilled,
+      peakTierIndex: this.army.peakTierIndex,
+      peakCombatPower: this.army.peakCombatPower,
+      // Wird beim Verbuchen im Ergebnisbildschirm gefüllt.
+      coinsEarned: 0,
+      durationSeconds: this.elapsed,
+    };
+
     const result: RunResult = {
       mode: this.ctx.state.mode,
-      victory: victory || this.victory,
-      score: Math.round(this.kinematics.distance * 10 + this.army.peakCombatPower * 5),
-      stats: {
-        sectorsCleared: this.sectorIndex + (this.victory ? 1 : 0),
-        kills: this.kills,
-        bossesKilled: this.bossesKilled,
-        peakTierIndex: this.army.peakTierIndex,
-        peakCombatPower: this.army.peakCombatPower,
-        coinsEarned: 0,
-        durationSeconds: this.elapsed,
-      },
+      victory: won,
+      score: computeScore(stats, won),
+      stats,
     };
     this.ctx.state.lastResult = result;
     this.ctx.bus.emit('run:ended', result);

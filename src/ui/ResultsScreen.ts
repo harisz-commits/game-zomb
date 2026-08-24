@@ -4,6 +4,8 @@ import { formatCompact, formatDuration } from '../util/format';
 
 export interface ResultsOptions {
   result: RunResult;
+  /** Zusätzlich verdiente Tech Parts. */
+  techParts: number;
   onContinue: () => void;
   onRetry: () => void;
 }
@@ -22,7 +24,6 @@ export function createResultsScreen(parent: HTMLElement, options: ResultsOptions
     ['Zombies killed', formatCompact(result.stats.kills)],
     ['Bosses down', String(result.stats.bossesKilled)],
     ['Peak power', formatCompact(result.stats.peakCombatPower)],
-    ['Coins earned', formatCompact(result.stats.coinsEarned)],
     ['Time', formatDuration(result.stats.durationSeconds)],
   ];
 
@@ -32,6 +33,14 @@ export function createResultsScreen(parent: HTMLElement, options: ResultsOptions
     row.appendChild(el('span', 'results-label', label));
     row.appendChild(el('span', 'results-value', value));
     table.appendChild(row);
+  }
+
+  // Die Ausbeute steht abgesetzt: Sie ist der Grund, gleich noch einmal zu
+  // starten, und soll nicht zwischen den Statistikzeilen untergehen.
+  const loot = layer.add(el('div', 'results-loot'));
+  loot.appendChild(el('span', 'chip loot', `◎ +${formatCompact(result.stats.coinsEarned)}`));
+  if (options.techParts > 0) {
+    loot.appendChild(el('span', 'chip loot', `⚙ +${formatCompact(options.techParts)}`));
   }
 
   const actions = layer.add(el('div', 'results-actions'));

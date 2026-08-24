@@ -10,6 +10,7 @@ export interface MainMenuOptions {
   /** Welche Modi sind laut Spielstand freigeschaltet? */
   unlocked: ReadonlySet<GameMode>;
   onPlay: (mode: GameMode) => void;
+  onUpgrades: () => void;
 }
 
 const MODE_LABELS: Record<GameMode, { title: string; hint: string }> = {
@@ -42,11 +43,12 @@ export function createMainMenu(parent: HTMLElement, options: MainMenuOptions): U
     action.disabled = !unlocked;
     entry.appendChild(action);
     entry.appendChild(
-      el('div', 'mode-hint', unlocked ? label.hint : 'Locked — finish a campaign run'),
+      el('div', 'mode-hint', unlocked ? label.hint : 'Locked — win a campaign run'),
     );
     modes.appendChild(entry);
   }
 
+  layer.add(button('Upgrades', options.onUpgrades, 'menu-upgrades'));
   layer.add(el('div', 'menu-footprint', 'Drag left and right to steer your squad.'));
 
   return layer;

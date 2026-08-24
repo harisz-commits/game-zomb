@@ -593,3 +593,122 @@ body {
   background: linear-gradient(90deg, #ff5a3c, #ffb43a);
   transition: width 0.12s linear;
 }
+
+/* ----------------------------------------------------------------- Shop */
+
+.layer.shop {
+  background: radial-gradient(circle at 50% 20%, #17202b, #05070a 75%);
+  gap: 10px;
+}
+
+.shop-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.shop-title {
+  font-size: clamp(18px, 6vw, 26px);
+  font-weight: 900;
+  letter-spacing: 0.2em;
+}
+
+.shop-wallet {
+  display: flex;
+  gap: 8px;
+}
+
+.shop-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px 0;
+  /* Die Liste ist der einzige scrollbare Bereich des Spiels. */
+  -webkit-overflow-scrolling: touch;
+}
+
+.shop-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #ffffff0f;
+  border: 1px solid #ffffff1a;
+}
+
+.shop-row.maxed {
+  opacity: 0.55;
+}
+
+.shop-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.shop-name {
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.shop-effect {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.shop-level {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  opacity: 0.45;
+  margin-top: 2px;
+}
+
+.shop-buy {
+  padding: 10px 14px;
+  font-size: 13px;
+  white-space: nowrap;
+  background: var(--accent);
+  color: #1a1206;
+  border-color: transparent;
+}
+
+.shop-buy.unaffordable {
+  background: #ffffff14;
+  color: var(--ink);
+}
+
+.shop-maxed {
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  color: var(--accent);
+  padding: 0 6px;
+}
+
+.shop-back {
+  align-self: center;
+  min-width: 140px;
+}
+
+.menu-upgrades {
+  min-width: min(340px, 84vw);
+  background: #ffffff12;
+}
+
+.results-loot {
+  display: flex;
+  gap: 8px;
+  margin: 4px 0 10px;
+}
+
+.chip.loot {
+  font-size: 15px;
+  font-weight: 900;
+  padding: 8px 16px;
+  background: #ffb43a26;
+  color: var(--accent);
+}

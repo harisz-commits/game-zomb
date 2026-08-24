@@ -5,6 +5,7 @@ import { Color4 } from '@babylonjs/core/Maths/math.color';
 import { GameScene } from './GameScene';
 import type { SceneId } from '../core/Types';
 import { createResultsScreen } from '../ui/ResultsScreen';
+import { bankRunResult } from '../progression/RewardSystem';
 
 /**
  * Rundenabschluss.
@@ -32,22 +33,20 @@ export class ResultsScene extends GameScene {
       return;
     }
 
-    this.ctx.save.update((save) => {
-      save.stats.runs += 1;
-      save.stats.kills += result.stats.kills;
-      save.stats.bestScore = Math.max(save.stats.bestScore, result.score);
-      save.meta.coins += result.stats.coinsEarned;
-      save.progress.highestTierIndex = Math.max(
-        save.progress.highestTierIndex,
-        result.stats.peakTierIndex,
-      );
-    });
+    // Genau EINMAL verbuchen. Die Szene kann bei einem Wiedereintritt
+    // erneut aufgebaut werden; ein zweites Gutschreiben wäre Falschgeld.
+    const rewards = bankRunResult(this.ctx.save.current, result);
+    result.stats.coinsEarned = rewards.coins;
+    this.ctx.save.markDirty();
     void this.ctx.save.flush();
     void this.ctx.platform.sendScore(result.score);
+    // Verhindert, dass ein zweiter Aufbau derselben Runde nochmals bucht.
+    this.ctx.state.lastResult = null;
 
     // TODO(Phase 8): Interstitial an dieser natuerlichen Pause anbieten.
     const screen = createResultsScreen(this.ctx.uiRoot, {
       result,
+      techParts: rewards.techParts,
       onContinue: () => this.ctx.requestScene('menu'),
       onRetry: () => this.ctx.requestScene('run'),
     });

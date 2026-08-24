@@ -4,8 +4,8 @@
 > technische Übersetzung davon: Architektur, Datenmodelle, Reihenfolge, Risiken,
 > Annahmen. Es wird pro Phase fortgeschrieben.
 
-Stand: Phasen 1 bis 5 abgeschlossen (ohne Supply Drops und Hazards), dazu
-das Kontrollpunkt-Zwischenspiel aus Phase 6 vorgezogen. Phasen 6–9 offen.
+Stand: Phasen 1 bis 6 abgeschlossen (ohne Supply Drops und Hazards).
+Phasen 7–9 offen.
 
 ---
 
@@ -726,3 +726,58 @@ vorher hätte sie eine Sektorfolge gemessen, die es nicht mehr gibt.
 Supply Drops und Hazards. Beide brauchen eine eigene Kollisionsschicht auf
 der Strecke; der Sektortyp „Ruins" ist bereits vorgesehen, unterscheidet
 sich aber bislang nur über die Regler.
+
+
+---
+
+## 14. Phase 6 — Der Grund für die zweite Runde
+
+### Zwei Arten von Aufwertung, ein Ziel
+
+| | Karten am Kontrollpunkt | Laden zwischen den Runden |
+|---|---|---|
+| Herkunft | gezogen | gekauft |
+| Dauer | eine Runde | für immer |
+| Wirkung | dieselben `RunModifiers` | dieselben `RunModifiers` |
+
+Der letzte Punkt ist der wichtige: Das Kampfsystem muss nicht wissen, woher
+ein Bonus stammt. Dauerhafte Aufwertungen werden VOR den Karten eingetragen,
+damit die Obergrenzen den Gesamtwert deckeln und nicht die Reihenfolge.
+
+Sieben Aufwertungen, fünf für Münzen, zwei für Tech Parts — damit die
+zweite Währung vom ersten Tag an einen Zweck hat statt sich totzulaufen.
+Jede Stufe ist klein; der Reiz liegt in der Menge und den steigenden Kosten,
+nicht darin, dass eine einzelne die Runde entscheidet.
+
+### Ökonomie
+
+Gemessener Kampagnenlauf: **513 Münzen und 2 Tech Parts**. Die günstigste
+Aufwertung kostet 90, die teuerste erste Stufe 160 — eine Runde kauft also
+ein bis zwei frühe Stufen. Nach dem ersten Lauf waren sechs von sieben
+Aufwertungen bezahlbar.
+
+Der Score dämpft die verbleibende Kampfkraft mit einem Exponenten unter eins.
+Sie wächst über eine Runde um Zehnerpotenzen; ungedämpft wären Sektoren,
+Kills und Bosse im Score bedeutungslos.
+
+### Verbucht wird an genau einer Stelle
+
+`bankRunResult` ist die einzige Funktion, die den Spielstand nach einer Runde
+verändert — sonst verteilt sich die Buchhaltung über mehrere Szenen und
+driftet auseinander. Der Ergebnisbildschirm löscht danach `lastResult`: Würde
+die Szene erneut aufgebaut, wäre ein zweites Gutschreiben Falschgeld.
+
+### Freischaltung
+
+Der Endlosmodus öffnet sich nach dem ersten gewonnenen Feldzug — er setzt
+voraus, dass man das Spiel einmal ganz gesehen hat.
+
+### Geprüft
+
+Ein vollständiger Durchlauf im Browser: Endlosmodus gesperrt → Laden leer und
+nichts bezahlbar → Kampagne gewonnen → 513 Münzen gutgeschrieben →
+Endlosmodus offen → Aufwertung gekauft (Stufe 0 → 1, Kontostand 513 → 423) →
+**Seite neu geladen, alles noch da**.
+
+Dazu ein Test, der sicherstellt, dass ein voll ausgebauter Spielstand
+zusammen mit legendären Karten die Armee nicht unverwundbar macht.

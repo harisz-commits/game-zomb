@@ -5,6 +5,9 @@ import { Color4 } from '@babylonjs/core/Maths/math.color';
 import { GameScene } from './GameScene';
 import type { GameMode, SceneId } from '../core/Types';
 import { createMainMenu } from '../ui/Menus';
+import { UpgradeShop } from '../ui/UpgradeShop';
+import { buyUpgrade } from '../progression/MetaProgression';
+import { UNLOCKS } from '../config/metaUpgrades';
 
 /**
  * Hauptmenue: Moduswahl und Waehrungsanzeige.
@@ -15,6 +18,9 @@ import { createMainMenu } from '../ui/Menus';
 export class MenuScene extends GameScene {
   readonly id: SceneId = 'menu';
 
+  private menu: { dispose: () => void } | null = null;
+  private shop: UpgradeShop | null = null;
+
   enter(): void {
     const scene = new Scene(this.ctx.engine);
     scene.clearColor = new Color4(0.04, 0.05, 0.07, 1);
@@ -24,11 +30,23 @@ export class MenuScene extends GameScene {
     scene.activeCamera = camera;
     this.babylonScene = scene;
 
+    this.showMenu();
+    this.onExit(() => {
+      this.menu?.dispose();
+      this.shop?.dispose();
+    });
+  }
+
+  private showMenu(): void {
+    this.shop?.dispose();
+    this.shop = null;
+
     const save = this.ctx.state.requireSave();
     const unlocked = new Set<GameMode>(['campaign', 'survival']);
-    if (save.unlocks.includes('endless')) unlocked.add('endless');
+    if (save.unlocks.includes(UNLOCKS.endless)) unlocked.add('endless');
 
-    const menu = createMainMenu(this.ctx.uiRoot, {
+    this.menu?.dispose();
+    this.menu = createMainMenu(this.ctx.uiRoot, {
       coins: save.meta.coins,
       techParts: save.meta.techParts,
       bestScore: save.stats.bestScore,
@@ -37,7 +55,24 @@ export class MenuScene extends GameScene {
         this.ctx.state.mode = mode;
         this.ctx.requestScene('run');
       },
+      onUpgrades: () => this.showShop(),
     });
-    this.onExit(() => menu.dispose());
+  }
+
+  private showShop(): void {
+    this.menu?.dispose();
+    this.menu = null;
+
+    this.shop = new UpgradeShop(this.ctx.uiRoot, {
+      save: this.ctx.state.requireSave(),
+      onBuy: (id) => {
+        const bought = buyUpgrade(this.ctx.state.requireSave(), id);
+        // Sofort sichern: Wer nach einem Kauf die Seite schliesst, darf
+        // seine Münzen nicht verlieren.
+        if (bought) void this.ctx.save.flush();
+        return bought;
+      },
+      onClose: () => this.showMenu(),
+    });
   }
 }
