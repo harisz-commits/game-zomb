@@ -84,9 +84,14 @@ export const WAVES = {
    * Eine Welle ist geräumt, sobald ihr Budget durch die Feuerkraft geteilt
    * kleiner ist als die Anflugzeit (rund 2,7 s). Mit einer zu niedrigen
    * Grenze schmilzt jede Welle vor der Berührung — der Zähler läuft, aber
-   * nichts steht auf dem Spiel. Ab hier holen die Wellen auf.
+   * nichts steht auf dem Spiel.
+   *
+   * Bewusst SEHR hoch angesetzt. Bei acht war der Deckel ab etwa Sektor
+   * zwölf erreicht, und der Endlosmodus hörte dort auf, schwerer zu werden:
+   * Wer bis dahin lebte, lief unbegrenzt weiter. Eine reguläre Runde kommt
+   * nie in die Nähe dieses Werts (Gefahrenstufe 5 ergibt knapp 3).
    */
-  intensityMax: 8,
+  intensityMax: 30,
   /** Zombies in der ersten Welle. */
   countStart: 9,
   /** … plus so viele je Gefahrenstufe. */

@@ -4,7 +4,7 @@
  */
 
 export const THREAT = {
-  /** Threat Level zu Beginn eines Endless-Runs. */
+  /** Gefahrenstufe zu Beginn einer Runde. */
   base: 0,
   /** Zuwachs pro Sektor. */
   perSector: 1,
@@ -12,6 +12,38 @@ export const THREAT = {
   exponentialFrom: 8,
   exponentialFactor: 1.12,
 } as const;
+
+/**
+ * Der Endlosmodus.
+ *
+ * Eine endliche Runde endet nach fuenf bis sechs Sektoren und erreicht den
+ * exponentiellen Teil der Kurve nie. Der Endlosmodus lebt genau davon: Er
+ * muss irgendwann toeten, sonst ist er kein Modus, sondern ein Bildschirmschoner.
+ *
+ * Die ersten Sektoren laufen bewusst milder als in einer regulaeren Runde —
+ * wer hier einsteigt, hat den Feldzug bereits gewonnen und soll nicht sofort
+ * an derselben Wand stehen, sondern erst weit spaeter.
+ */
+export const ENDLESS = {
+  /** Faktor auf die Gefahrenstufe; unter 1 ist der Einstieg sanfter. */
+  threatScale: 0.85,
+  /** Zusaetzlicher Zuwachs pro Sektor, oben auf die Grundkurve. */
+  extraPerSector: 0.6,
+  /** Alle so vielen Sektoren wird eine neue Gefahrenstufe ausgerufen. */
+  milestoneEvery: 4,
+} as const;
+
+/**
+ * Gefahrenstufe im Endlosmodus.
+ *
+ * Steigt schneller als die Grundkurve, startet aber flacher. Der Schnittpunkt
+ * liegt bei rund sechs Sektoren — also genau dort, wo eine regulaere Runde
+ * endet.
+ */
+export function endlessThreatForSector(sectorIndex: number): number {
+  const base = threatLevelForSector(sectorIndex) * ENDLESS.threatScale;
+  return base + sectorIndex * ENDLESS.extraPerSector;
+}
 
 /** Threat Level nach n abgeschlossenen Sektoren im Endlosmodus. */
 export function threatLevelForSector(sectorIndex: number): number {

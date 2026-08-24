@@ -10,13 +10,14 @@ import { RunDirector } from '../src/run/RunDirector';
 import { RunModifiers } from '../src/run/RunModifiers';
 import { EventBus } from '../src/core/EventBus';
 import { ARMY, DISPLAY_CAPS, MOVEMENT } from '../src/config/gameBalance';
-import { threatLevelForSector } from '../src/config/levelCurves';
 import { powerAfterEffect } from '../src/army/CombatPowerSystem';
 import { getTier } from '../src/config/unitTiers';
 
 const STEP = 1 / 60;
 
 interface RunOutcome {
+  sectors: number;
+  seconds: number;
   power: number;
   kills: number;
   lost: number;
@@ -34,12 +35,12 @@ interface RunOutcome {
  * `smart` wählt an jedem Tor die tatsächlich bessere Seite, sonst wird
  * abwechselnd geraten — der Unterschied zwischen können und drücken.
  */
-function playRun(seed: number, seconds: number, smart: boolean): RunOutcome {
+function playRun(seed: number, seconds: number, smart: boolean, mode: 'endless' | 'survival' = 'endless'): RunOutcome {
   const mods = new RunModifiers();
   const army = new ArmyManager(new EventBus(), ARMY.startCombatPower, mods);
   // Derselbe Regisseur wie im Spiel: sonst misst der Test eine Sektorfolge,
   // die es nicht mehr gibt.
-  const director = new RunDirector(seed, 'endless');
+  const director = new RunDirector(seed, mode);
   const gates = new GateSystem(seed, director);
   const enemies = new EnemyManager();
   const spawner = new ZombieSpawner(seed ^ 0x51ed270b, director);
@@ -56,7 +57,8 @@ function playRun(seed: number, seconds: number, smart: boolean): RunOutcome {
   let lost = 0;
   let peakAlive = 0;
 
-  for (let t = 0; t < seconds; t += STEP) {
+  let t = 0;
+  for (; t < seconds; t += STEP) {
     distance += MOVEMENT.forwardSpeed * mods.speed * STEP;
 
     const upcoming = gates.active.find((gate) => !gate.resolved && gate.z - distance < 12);
@@ -76,7 +78,7 @@ function playRun(seed: number, seconds: number, smart: boolean): RunOutcome {
     }
     gates.update(distance, x, (effect) => army.applyGate(effect));
 
-    const threat = threatLevelForSector(sector);
+    const threat = director.threatAt(sector);
     const plan = director.sector(sector);
     if (sector !== lastBossSector && plan.hasBoss) {
       lastBossSector = sector;
@@ -147,17 +149,25 @@ function playRun(seed: number, seconds: number, smart: boolean): RunOutcome {
       army.tryPromote();
     }
     if (army.defeated) {
-      return { power: 0, kills, lost, died: true, peakAlive, bossesFought, bossesKilled, firstBossCost };
+      return {
+        sectors: sector, seconds: t, power: 0, kills, lost, died: true,
+        peakAlive, bossesFought, bossesKilled, firstBossCost,
+      };
     }
   }
   return {
-    power: army.combatPower, kills, lost, died: false, peakAlive,
+    sectors: sector, seconds, power: army.combatPower, kills, lost, died: false, peakAlive,
     bossesFought, bossesKilled, firstBossCost,
   };
 }
 
+/**
+ * Stichprobe fuer die REGULAERE Runde. Der Endlosmodus hat eine eigene
+ * Gefahrenkurve und wird getrennt gemessen — sonst behaupten diese Tests
+ * etwas ueber einen Modus, den sie gar nicht spielen.
+ */
 function sample(seconds: number, smart: boolean, count = 12): RunOutcome[] {
-  return Array.from({ length: count }, (_, seed) => playRun(seed, seconds, smart));
+  return Array.from({ length: count }, (_, seed) => playRun(seed, seconds, smart, 'survival'));
 }
 
 describe('combat balance', { timeout: 120_000 }, () => {
@@ -256,5 +266,42 @@ describe('boss balance', { timeout: 120_000 }, () => {
       .map((run) => run.bossesKilled)
       .sort((a, b) => a - b);
     expect(killed[Math.floor(killed.length / 2)]!).toBeGreaterThanOrEqual(2);
+  });
+});
+
+
+describe('endless depth', { timeout: 300_000 }, () => {
+  function endlessRuns(count = 15): RunOutcome[] {
+    // Fünfzehn Minuten sind weit jenseits jeder Spielsitzung — was hier noch
+    // lebt, lebt ewig.
+    return Array.from({ length: count }, (_, seed) => playRun(seed, 900, true, 'endless'));
+  }
+
+  /**
+   * Die zentrale Eigenschaft des Modus: Er MUSS enden.
+   *
+   * Vorher tat er das nicht. Die Wellenstärke war gedeckelt, also hörte das
+   * Spiel ab etwa Sektor zwölf auf, schwerer zu werden — wer bis dahin
+   * lebte, lief unbegrenzt weiter. Ein Endlosmodus ohne Ende ist kein Modus,
+   * sondern ein Bildschirmschoner.
+   */
+  it('always ends, however well it is played', () => {
+    expect(endlessRuns().every((run) => run.died)).toBe(true);
+  });
+
+  it('lasts long enough to be worth starting', () => {
+    const seconds = endlessRuns()
+      .map((run) => run.seconds)
+      .sort((a, b) => a - b);
+    const median = seconds[Math.floor(seconds.length / 2)]!;
+    // Im Korridor der Spezifikation für eine lange Runde, mit Luft nach oben.
+    expect(median).toBeGreaterThan(120);
+    expect(median).toBeLessThan(600);
+  });
+
+  /** Und der Einstieg darf niemanden nach zwanzig Sekunden hinauswerfen. */
+  it('rarely ends in the first few sectors', () => {
+    const early = endlessRuns().filter((run) => run.sectors < 4).length;
+    expect(early).toBeLessThanOrEqual(2);
   });
 });

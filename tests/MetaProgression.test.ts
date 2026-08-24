@@ -168,15 +168,29 @@ describe('rewards', () => {
 
 describe('score', () => {
   it('rewards every kind of progress', () => {
-    const base = computeScore(stats(), false);
-    expect(computeScore(stats({ sectorsCleared: 6 }), false)).toBeGreaterThan(base);
-    expect(computeScore(stats({ kills: 300 }), false)).toBeGreaterThan(base);
-    expect(computeScore(stats({ bossesKilled: 3 }), false)).toBeGreaterThan(base);
-    expect(computeScore(stats({ peakTierIndex: 5 }), false)).toBeGreaterThan(base);
+    const base = computeScore(stats(), false, 'campaign');
+    expect(computeScore(stats({ sectorsCleared: 6 }), false, 'campaign')).toBeGreaterThan(base);
+    expect(computeScore(stats({ kills: 300 }), false, 'campaign')).toBeGreaterThan(base);
+    expect(computeScore(stats({ bossesKilled: 3 }), false, 'campaign')).toBeGreaterThan(base);
+    expect(computeScore(stats({ peakTierIndex: 5 }), false, 'campaign')).toBeGreaterThan(base);
   });
 
   it('pays a bonus for finishing the run', () => {
-    expect(computeScore(stats(), true)).toBeGreaterThan(computeScore(stats(), false));
+    expect(computeScore(stats(), true, 'campaign')).toBeGreaterThan(computeScore(stats(), false, 'campaign'));
+  });
+
+  /**
+   * Im Endlosmodus ist Tiefe die einzige Währung: Ohne Aufschlag wäre der
+   * zwanzigste Sektor kaum mehr wert als der zehnte.
+   */
+  it('rewards depth in endless mode', () => {
+    const shallow = computeScore(stats({ sectorsCleared: 5 }), false, 'endless');
+    const deep = computeScore(stats({ sectorsCleared: 20 }), false, 'endless');
+    expect(deep / shallow).toBeGreaterThan(1.5);
+    // Und der Aufschlag gilt nur dort.
+    expect(computeScore(stats({ sectorsCleared: 20 }), false, 'endless')).toBeGreaterThan(
+      computeScore(stats({ sectorsCleared: 20 }), false, 'survival'),
+    );
   });
 
   /**
@@ -184,8 +198,8 @@ describe('score', () => {
    * zählten Sektoren, Kills und Bosse gar nicht mehr.
    */
   it('damps combat power so the other factors still matter', () => {
-    const modest = computeScore(stats({ peakCombatPower: 1000 }), false);
-    const huge = computeScore(stats({ peakCombatPower: 1_000_000_000 }), false);
+    const modest = computeScore(stats({ peakCombatPower: 1000 }), false, 'campaign');
+    const huge = computeScore(stats({ peakCombatPower: 1_000_000_000 }), false, 'campaign');
     expect(huge).toBeGreaterThan(modest);
     // Eine Million Mal mehr Kraft darf nicht eine Million Mal mehr Punkte geben.
     expect(huge / modest).toBeLessThan(5000);

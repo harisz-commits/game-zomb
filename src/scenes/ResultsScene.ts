@@ -47,6 +47,7 @@ export class ResultsScene extends GameScene {
     const screen = createResultsScreen(this.ctx.uiRoot, {
       result,
       techParts: rewards.techParts,
+      newBestDepth: rewards.newBestDepth,
       onContinue: () => this.ctx.requestScene('menu'),
       onRetry: () => this.ctx.requestScene('run'),
     });

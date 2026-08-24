@@ -6,6 +6,8 @@ export interface ResultsOptions {
   result: RunResult;
   /** Zusätzlich verdiente Tech Parts. */
   techParts: number;
+  /** Endlosmodus: War dieser Lauf tiefer als jeder bisherige? */
+  newBestDepth: boolean;
   onContinue: () => void;
   onRetry: () => void;
 }
@@ -16,11 +18,23 @@ export function createResultsScreen(parent: HTMLElement, options: ResultsOptions
 
   // Eine überstandene Runde verdient ein eigenes Wort — „Sektor gesichert"
   // klingt nach Zwischenstand, nicht nach Abschluss.
-  layer.add(el('div', 'results-title', result.victory ? 'MISSION COMPLETE' : 'OVERRUN'));
+  // Im Endlosmodus gibt es kein Gewinnen — dort zählt, wie weit man kam.
+  const title = result.mode === 'endless'
+    ? `DEPTH ${result.stats.sectorsCleared}`
+    : result.victory
+      ? 'MISSION COMPLETE'
+      : 'OVERRUN';
+  layer.add(el('div', 'results-title', title));
+  if (options.newBestDepth) {
+    layer.add(el('div', 'results-record', 'NEW RECORD'));
+  }
   layer.add(el('div', 'results-score', formatCompact(result.score)));
 
   const rows: Array<[string, string]> = [
-    ['Sectors cleared', String(result.stats.sectorsCleared)],
+    [
+      result.mode === 'endless' ? 'Sectors survived' : 'Sectors cleared',
+      String(result.stats.sectorsCleared),
+    ],
     ['Zombies killed', formatCompact(result.stats.kills)],
     ['Bosses down', String(result.stats.bossesKilled)],
     ['Peak power', formatCompact(result.stats.peakCombatPower)],

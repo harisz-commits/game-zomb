@@ -15,6 +15,8 @@ export interface HudModel {
   sectorLabel: string;
   /** Sektoren insgesamt; `Infinity` im Endlosmodus. */
   totalSectors: number;
+  /** Gefahrenstufe; `null` ausserhalb des Endlosmodus. */
+  threat: number | null;
   elapsedSeconds: number;
   kills: number;
 }
@@ -31,6 +33,7 @@ export class HUD {
   private readonly powerLabel: HTMLElement;
   private readonly timeLabel: HTMLElement;
   private readonly killLabel: HTMLElement;
+  private readonly threatLabel: HTMLElement;
   private readonly sectorLabel: HTMLElement;
   private readonly progressFill: HTMLElement;
   private readonly overflowFill: HTMLElement;
@@ -62,7 +65,9 @@ export class HUD {
     this.powerLabel = el('div', 'hud-power', '');
     this.timeLabel = el('div', 'hud-time', '0:00');
     this.killLabel = el('div', 'hud-kills', '');
+    this.threatLabel = el('div', 'hud-threat', '');
     right.appendChild(this.powerLabel);
+    right.appendChild(this.threatLabel);
     right.appendChild(this.killLabel);
     right.appendChild(this.timeLabel);
 
@@ -113,7 +118,16 @@ export class HUD {
    * als Verlust, also als das Gegenteil dessen, was er ist.
    */
   showPromotion(tierName: string, nowSeconds: number): void {
-    this.banner.textContent = `PROMOTED — ${tierName.toUpperCase()}`;
+    this.showBanner(`Promoted — ${tierName}`, nowSeconds);
+  }
+
+  /**
+   * Kurze Einblendung für alles, was kein Aufstieg ist — etwa eine neue
+   * Gefahrenstufe im Endlosmodus. Anfangs lief das über `showPromotion` und
+   * meldete dann „PROMOTED — THREAT LEVEL 1", was schlicht falsch war.
+   */
+  showBanner(text: string, nowSeconds: number): void {
+    this.banner.textContent = text.toUpperCase();
     this.banner.classList.add('visible');
     this.bannerUntil = nowSeconds + 2.2;
   }
@@ -124,6 +138,8 @@ export class HUD {
     this.powerLabel.textContent = `PWR ${formatCompact(model.combatPower)}`;
     this.timeLabel.textContent = formatDuration(model.elapsedSeconds);
     this.killLabel.textContent = model.kills > 0 ? `☠ ${formatCompact(model.kills)}` : '';
+    this.threatLabel.textContent =
+      model.threat === null ? '' : `THREAT ${model.threat.toFixed(0)}`;
     // Im Endlosmodus gibt es kein „von", nur ein Weiter.
     const position = Number.isFinite(model.totalSectors)
       ? `${model.sectorIndex + 1}/${model.totalSectors}`

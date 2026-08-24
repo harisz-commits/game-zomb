@@ -1,4 +1,4 @@
-import type { RunResult, RunStats } from '../core/Types';
+import type { GameMode, RunResult, RunStats } from '../core/Types';
 import type { SaveData } from '../save/SaveSchema';
 import { REWARDS, SCORE } from '../config/rewards';
 import { UNLOCKS } from '../config/metaUpgrades';
@@ -9,6 +9,8 @@ export interface RunRewards {
   techParts: number;
   /** Anteil, den die Aufwertung „Salvage Crew" beigesteuert hat. */
   salvageBonus: number;
+  /** Endlosmodus: War dieser Lauf tiefer als jeder bisherige? */
+  newBestDepth: boolean;
 }
 
 /**
@@ -29,6 +31,7 @@ export function computeRewards(stats: RunStats, salvage: number): RunRewards {
     coins,
     techParts: stats.bossesKilled * REWARDS.techPartsPerBoss,
     salvageBonus: coins - Math.round(base),
+    newBestDepth: false,
   };
 }
 
@@ -39,7 +42,7 @@ export function computeRewards(stats: RunStats, salvage: number): RunRewards {
  * eine Runde um Zehnerpotenzen und würde ungedämpft jeden anderen Beitrag
  * bedeutungslos machen — Sektoren, Kills und Bosse zählten dann gar nicht.
  */
-export function computeScore(stats: RunStats, victory: boolean): number {
+export function computeScore(stats: RunStats, victory: boolean, mode: GameMode): number {
   const power = Math.max(0, stats.peakCombatPower);
   const score =
     stats.sectorsCleared * SCORE.perSector +
@@ -48,6 +51,12 @@ export function computeScore(stats: RunStats, victory: boolean): number {
     stats.peakTierIndex * SCORE.perTierIndex +
     Math.pow(power, SCORE.combatPowerExponent) * SCORE.combatPowerFactor;
 
+  if (mode === 'endless') {
+    // Tiefe ist im Endlosmodus die einzige Währung. Der Aufschlag wächst mit
+    // jedem Sektor, weil auch die Gefahr das tut — ohne ihn wäre der
+    // zwanzigste Sektor kaum mehr wert als der zehnte.
+    return Math.round(score * (1 + stats.sectorsCleared * SCORE.endlessThreatFactor));
+  }
   return Math.round(victory ? score * 1.25 : score);
 }
 
@@ -59,6 +68,9 @@ export function computeScore(stats: RunStats, victory: boolean): number {
  */
 export function bankRunResult(save: SaveData, result: RunResult): RunRewards {
   const rewards = computeRewards(result.stats, upgradeTotal(save, 'salvage'));
+  // Vor dem Schreiben vergleichen — danach ist der alte Bestwert weg.
+  rewards.newBestDepth =
+    result.mode === 'endless' && result.stats.sectorsCleared > save.stats.bestEndlessSector;
 
   save.meta.coins += rewards.coins;
   save.meta.techParts += rewards.techParts;

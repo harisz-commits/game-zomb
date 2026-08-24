@@ -4,8 +4,8 @@
 > technische Übersetzung davon: Architektur, Datenmodelle, Reihenfolge, Risiken,
 > Annahmen. Es wird pro Phase fortgeschrieben.
 
-Stand: Phasen 1 bis 6 abgeschlossen (ohne Supply Drops und Hazards).
-Phasen 7–9 offen.
+Stand: Phasen 1 bis 7 abgeschlossen (ohne Supply Drops und Hazards).
+Phasen 8 und 9 offen.
 
 ---
 
@@ -781,3 +781,68 @@ Endlosmodus offen → Aufwertung gekauft (Stufe 0 → 1, Kontostand 513 → 423)
 
 Dazu ein Test, der sicherstellt, dass ein voll ausgebauter Spielstand
 zusammen mit legendären Karten die Armee nicht unverwundbar macht.
+
+
+---
+
+## 15. Phase 7 — Der Endlosmodus
+
+### Der Fehler, den erst die Messung zeigte
+
+Der Endlosmodus **endete nicht**. Fünf von fünfzehn Läufen lebten nach
+fünfzehn Minuten noch — und wären beliebig weitergelaufen.
+
+Die Ursache lag nicht in der Gefahrenkurve, sondern in einem Deckel weiter
+unten: `intensityMax` begrenzte die Wellenstärke auf das Achtfache der
+Armeestärke. Diese Grenze war ab etwa Sektor zwölf erreicht, und ab dort
+**hörte das Spiel auf, schwerer zu werden**. Die Gefahrenstufe stieg brav
+weiter, ohne noch etwas zu bewirken.
+
+Ein Endlosmodus ohne Ende ist kein Modus, sondern ein Bildschirmschoner.
+Mit angehobenem Deckel (30 statt 8, eine reguläre Runde kommt nie über 3):
+
+| | vorher | jetzt |
+|---|---|---|
+| Läufe, die enden | 15/20 | **20/20** |
+| Mediandauer | 302 s | 287 s |
+| längster Lauf | 900 s (Abbruch) | 600 s |
+
+### Eigene Kurve
+
+Der Einstieg ist milder als in einer regulären Runde (Faktor 0,85) — wer den
+Modus freischaltet, hat den Feldzug schon gewonnen und soll nicht sofort an
+derselben Wand stehen. Dafür kommt pro Sektor ein Zuschlag obendrauf, sodass
+die Kurve die reguläre etwa bei Sektor sechs überholt: genau dort, wo eine
+endliche Runde endet.
+
+Die Gefahrenstufe wird jetzt zentral im RunDirector bestimmt. Vorher rechnete
+die Run-Szene sie selbst aus — bei zwei Kurven wäre das eine Einladung, sie
+an drei Stellen unterschiedlich zu entscheiden.
+
+### Score und Rekord
+
+Tiefe ist im Endlosmodus die einzige Währung: Der Score bekommt einen
+Aufschlag, der mit jedem Sektor wächst, weil auch die Gefahr das tut. Ohne
+ihn wäre der zwanzigste Sektor kaum mehr wert als der zehnte.
+
+Der Ergebnisbildschirm heisst dort nicht „Mission Complete", sondern nennt
+die erreichte Tiefe — und meldet einen Rekord, sobald einer fällt. Verglichen
+wird VOR dem Schreiben; danach ist der alte Bestwert weg.
+
+### Ein Wortfehler
+
+Für die Meldung „neue Gefahrenstufe" hatte ich die Beförderungs-Einblendung
+mitbenutzt. Sie meldete daraufhin **„PROMOTED — THREAT LEVEL 1"**. Die
+Einblendung ist jetzt allgemein; „Promoted" steht nur noch dort, wo wirklich
+befördert wurde.
+
+### Gemessener Lauf im Browser
+
+Tiefe 8 in 4:11, 683 Zombies, 2 Bosse, Gefahrenstufe von 0 auf 12, zwei
+Meilenstein-Einblendungen, Rekord gesetzt, 773 Münzen.
+
+### Nebenbefund
+
+Die allgemeinen Balance-Tests liefen bis hierher unter der Endlos-Kurve,
+obwohl sie von einer regulären Runde sprechen. Sie messen jetzt den Modus,
+den sie behaupten.

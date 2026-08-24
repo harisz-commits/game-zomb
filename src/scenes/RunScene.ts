@@ -22,7 +22,6 @@ import { RunDirector } from '../run/RunDirector';
 import { applyMetaUpgrades, startingCombatPower } from '../progression/MetaProgression';
 import { computeScore } from '../progression/RewardSystem';
 import type { SectorPlan } from '../run/SectorGenerator';
-import { threatLevelForSector } from '../config/levelCurves';
 import { ArmyManager } from '../army/ArmyManager';
 import { FormationLayout } from '../army/FormationSystem';
 import { RunModifiers } from '../run/RunModifiers';
@@ -206,6 +205,10 @@ export class RunScene extends GameScene {
     if (sector.index !== this.sectorIndex) {
       this.sectorIndex = sector.index;
       this.sector = sector;
+      const milestone = this.director.milestoneAt(sector.index);
+      if (milestone !== null) {
+        this.hud?.showBanner(`Threat level ${milestone}`, this.elapsed);
+      }
       this.reachCheckpoint();
     }
 
@@ -232,7 +235,7 @@ export class RunScene extends GameScene {
    * beträfe das Feuer Positionen, die es in diesem Bild nie gab.
    */
   private updateCombat(dt: number): void {
-    const threat = threatLevelForSector(this.sectorIndex);
+    const threat = this.director.threatAt(this.sectorIndex);
     this.placeBossIfDue(threat);
 
     for (const wave of this.spawner.due(this.kinematics.distance, threat)) {
@@ -276,7 +279,7 @@ export class RunScene extends GameScene {
         this.finishRun(true);
         return;
       }
-      this.hud?.showPromotion('Boss down', this.elapsed);
+      this.hud?.showBanner('Boss down', this.elapsed);
     }
     if (outcome.powerLost > 0) this.army.damage(outcome.powerLost);
 
@@ -400,6 +403,9 @@ export class RunScene extends GameScene {
       sectorIndex: this.sectorIndex,
       sectorLabel: this.sector.label,
       totalSectors: this.director.totalSectors,
+      threat: this.ctx.state.mode === 'endless'
+        ? this.director.threatAt(this.sectorIndex)
+        : null,
       elapsedSeconds: this.elapsed,
       kills: this.kills,
     });
@@ -451,7 +457,7 @@ export class RunScene extends GameScene {
     const result: RunResult = {
       mode: this.ctx.state.mode,
       victory: won,
-      score: computeScore(stats, won),
+      score: computeScore(stats, won, this.ctx.state.mode),
       stats,
     };
     this.ctx.state.lastResult = result;

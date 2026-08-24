@@ -1,5 +1,6 @@
 import type { GameMode } from '../core/Types';
 import { RUN } from '../config/gameBalance';
+import { ENDLESS, endlessThreatForSector, threatLevelForSector } from '../config/levelCurves';
 import { Random } from '../util/Random';
 import { planSector, type SectorPacing, type SectorPlan } from './SectorGenerator';
 
@@ -73,6 +74,30 @@ export class RunDirector implements SectorPacing {
 
   waveIntensityScaleAt(z: number): number {
     return this.sectorAt(z).waveIntensityScale;
+  }
+
+  /**
+   * Gefahrenstufe eines Sektors.
+   *
+   * Zentral hier statt bei jedem Aufrufer: Der Endlosmodus hat eine eigene
+   * Kurve, und die soll nicht an drei Stellen im Code entschieden werden.
+   */
+  threatAt(sectorIndex: number): number {
+    return this.mode === 'endless'
+      ? endlessThreatForSector(sectorIndex)
+      : threatLevelForSector(sectorIndex);
+  }
+
+  /**
+   * Erreicht dieser Sektor eine neue Gefahrenstufe?
+   *
+   * Nur im Endlosmodus — eine endliche Runde erzaehlt ihren Fortschritt
+   * ueber Sektortypen, nicht ueber eine Zahl.
+   */
+  milestoneAt(sectorIndex: number): number | null {
+    if (this.mode !== 'endless' || sectorIndex === 0) return null;
+    if (sectorIndex % ENDLESS.milestoneEvery !== 0) return null;
+    return sectorIndex / ENDLESS.milestoneEvery;
   }
 
   /** Weltposition, an der ein Boss dieses Sektors steht. */
