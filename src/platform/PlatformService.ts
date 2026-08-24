@@ -47,7 +47,11 @@ export interface PlatformService {
 
   showInterstitial(): Promise<AdOutcome>;
 
-  showRewardedAd(): Promise<RewardedOutcome>;
+  /**
+   * @param rewardId Kennung der Platzierung. Das YouTube-SDK verlangt sie;
+   *   die lokale Implementierung protokolliert sie nur.
+   */
+  showRewardedAd(rewardId: string): Promise<RewardedOutcome>;
 
   /** BCP-47-Sprachcode, z. B. "en" oder "de-DE". */
   getLanguage(): string;

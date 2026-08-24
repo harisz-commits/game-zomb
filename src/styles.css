@@ -727,3 +727,34 @@ body {
   color: var(--accent);
   margin-top: -4px;
 }
+
+.btn.reward {
+  position: relative;
+  min-width: min(280px, 78vw);
+  background: linear-gradient(135deg, #ffb43a, #ff8a3a);
+  color: #1a1206;
+  border-color: transparent;
+}
+
+.btn.reward.granted {
+  background: #2e7d4f;
+  color: var(--ink);
+}
+
+.reward-tag {
+  position: absolute;
+  top: -7px;
+  right: 10px;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: #1a1206;
+  color: var(--accent);
+}
+
+.chip.loot.doubled {
+  background: #2e7d4f3d;
+  color: #7de08a;
+}

@@ -6,6 +6,8 @@ import { GameScene } from './GameScene';
 import type { SceneId } from '../core/Types';
 import { createResultsScreen } from '../ui/ResultsScreen';
 import { bankRunResult } from '../progression/RewardSystem';
+import { AdManager } from '../ads/AdManager';
+import { REWARD_IDS } from '../config/ads';
 
 /**
  * Rundenabschluss.
@@ -39,16 +41,39 @@ export class ResultsScene extends GameScene {
     result.stats.coinsEarned = rewards.coins;
     this.ctx.save.markDirty();
     void this.ctx.save.flush();
-    void this.ctx.platform.sendScore(result.score);
+    // Zertifizierungsanforderung: Der gesendete Bestwert MUSS dem Bestwert
+    // im Spielstand entsprechen. Vorher ging der Score DIESER Runde raus —
+    // nach einem schwächeren Lauf hätte YouTube einen niedrigeren Wert
+    // gesehen als das Spiel selbst anzeigt.
+    void this.ctx.platform.sendScore(this.ctx.save.current.stats.bestScore);
     // Verhindert, dass ein zweiter Aufbau derselben Runde nochmals bucht.
     this.ctx.state.lastResult = null;
 
-    // TODO(Phase 8): Interstitial an dieser natuerlichen Pause anbieten.
+    const ads = new AdManager(this.ctx.platform);
     const screen = createResultsScreen(this.ctx.uiRoot, {
       result,
       techParts: rewards.techParts,
       newBestDepth: rewards.newBestDepth,
-      onContinue: () => this.ctx.requestScene('menu'),
+      onDoubleRewards: async () => {
+        const granted = await ads.offerReward(REWARD_IDS.doubleRewards);
+        if (!granted) return false;
+        // Noch einmal dieselbe Summe — die erste ist bereits gutgeschrieben.
+        this.ctx.save.update((save) => {
+          save.meta.coins += rewards.coins;
+          save.meta.techParts += rewards.techParts;
+        });
+        result.stats.coinsEarned = rewards.coins * 2;
+        void this.ctx.save.flush();
+        return true;
+      },
+      onContinue: () => {
+        // Das Interstitial gehört hierher: zwischen zwei Runden, an einer
+        // Pause, die der Spieler selbst gewählt hat. Der Szenenwechsel
+        // wartet nicht darauf — eine hängende Einblendung darf das Spiel
+        // nicht festhalten.
+        void ads.maybeShowInterstitial(this.ctx.save.current, performance.now() / 1000);
+        this.ctx.requestScene('menu');
+      },
       onRetry: () => this.ctx.requestScene('run'),
     });
     this.onExit(() => screen.dispose());

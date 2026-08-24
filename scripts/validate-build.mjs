@@ -52,6 +52,15 @@ const ALLOWED_PREFIXES = [
  * einer anderen URL auf oder schleicht sich ein echter Aufruf ein, faellt das
  * hier auf, statt still durchzurutschen. Jeder Eintrag braucht eine Quelle.
  */
+/**
+ * Die EINZIGE externe Ressource, die geladen werden darf.
+ *
+ * YouTube verlangt, dass das Playables-SDK vor jedem Spielcode geladen wird.
+ * Es kommt von der Plattform selbst; jede andere externe Adresse bleibt ein
+ * Fehler.
+ */
+const REQUIRED_PLATFORM_SDK = 'https://www.youtube.com/game_api/v1';
+
 const INERT_THIRD_PARTY_DEFAULTS = new Map([
   ['https://cdn.babylonjs.com', 'Tools._DefaultCdnUrl — nur fuer Tools.LoadScript'],
   ['https://assets.babylonjs.com/core', 'Tools._DefaultAssetsUrl — nur fuer Beispiel-Assets'],
@@ -66,6 +75,7 @@ const INERT_THIRD_PARTY_DEFAULTS = new Map([
 const errors = [];
 const warnings = [];
 const notices = [];
+let sdkTagSeen = false;
 
 async function walk(dir) {
   const out = [];
@@ -82,6 +92,12 @@ function checkExternalReferences(relPath, content) {
     for (const match of content.matchAll(regex)) {
       const hit = match[0];
       if (ALLOWED_PREFIXES.some((allowed) => hit.startsWith(allowed))) continue;
+
+      if (hit === REQUIRED_PLATFORM_SDK) {
+        notices.push(`${relPath}: required Playables SDK ${hit}`);
+        sdkTagSeen = true;
+        continue;
+      }
 
       const reason = INERT_THIRD_PARTY_DEFAULTS.get(hit);
       if (reason) {
@@ -133,6 +149,13 @@ async function main() {
     checkExternalReferences(rel, content);
     checkNetworkApis(rel, content);
     if (extname(file) === '.html') checkAbsolutePaths(rel, content);
+  }
+
+  // Ohne das SDK-Script laeuft das Spiel im Container ohne Plattformdienste:
+  // kein Speichern, kein Score, keine Werbung — und der Ladespinner bleibt
+  // stehen, weil gameReady nie ankommt.
+  if (!sdkTagSeen) {
+    errors.push(`the required Playables SDK script (${REQUIRED_PLATFORM_SDK}) is missing`);
   }
 
   const totalMb = totalBytes / (1024 * 1024);

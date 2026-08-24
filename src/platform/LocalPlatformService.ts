@@ -68,8 +68,8 @@ export class LocalPlatformService implements PlatformService {
     return { status: 'shown' };
   }
 
-  async showRewardedAd(): Promise<RewardedOutcome> {
-    console.info('[platform] rewarded ad (mock)');
+  async showRewardedAd(rewardId: string): Promise<RewardedOutcome> {
+    console.info(`[platform] rewarded ad (mock): ${rewardId}`);
     this.emitPause();
     await delay(1200);
     this.emitResume();

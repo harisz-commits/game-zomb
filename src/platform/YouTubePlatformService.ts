@@ -4,26 +4,30 @@ import type {
   RewardedOutcome,
   Unsubscribe,
 } from './PlatformService';
-import type { YtGameSdk } from './ytgame';
+import type { YtGameError, YtGameSdk } from './ytgame';
+
+/** Zertifizierungsgrenze für einen Spielstand. */
+const SAVE_LIMIT_BYTES = 64 * 1024;
 
 /**
- * Implementierung fuer YouTube Playables.
+ * Implementierung für YouTube Playables.
  *
- * Vorbereitet, aber bis Phase 8 nicht gegen ein reales SDK verifiziert
- * (PLAN.md A5). Zwei Konstruktionsprinzipien:
+ * Gegen die offizielle Dokumentation und das offizielle Beispielprojekt
+ * geprüft (Quellen im Kopf von `ytgame.d.ts`). Zwei Prinzipien tragen sie:
  *
  * 1. **Feature-Detection statt Annahme.** Jede SDK-Methode wird vor dem
- *    Aufruf geprueft; fehlt sie, gibt es einen definierten Fallback.
- * 2. **Nichts wirft.** Ein Fehler im SDK darf das Spiel nicht anhalten.
+ *    Aufruf geprüft; fehlt sie, gibt es einen definierten Rückfall.
+ * 2. **Nichts wirft.** Ein Fehler im SDK darf keine Runde beenden.
  *
- * Das SDK wird von der Plattform selbst injiziert; das Bundle laedt nichts
- * nach — das waere ein Verstoss gegen die Playables-Regeln.
+ * Das SDK wird per Script-Tag von YouTube geladen (siehe `index.html`) und
+ * hängt danach an `window.ytgame`. Das Bundle lädt nichts nach.
  */
 export class YouTubePlatformService implements PlatformService {
   readonly id = 'youtube' as const;
 
   private readonly sdk: YtGameSdk;
   private audioEnabled = true;
+  private loadCompleted = false;
   private readonly audioHandlers = new Set<(enabled: boolean) => void>();
   private readonly pauseHandlers = new Set<() => void>();
   private readonly resumeHandlers = new Set<() => void>();
@@ -32,17 +36,26 @@ export class YouTubePlatformService implements PlatformService {
     this.sdk = sdk;
   }
 
-  /** Liefert das SDK, wenn die Seite in einem Playables-Container laeuft. */
+  /**
+   * Liefert das SDK, wenn die Seite in einem Playables-Container läuft.
+   *
+   * Massgeblich ist `IN_PLAYABLES_ENV` — der dokumentierte Weg. Das blosse
+   * Vorhandensein von `window.ytgame` genügt nicht: Das Script kann geladen
+   * sein, während die Seite in einem gewöhnlichen Browser-Tab steht.
+   */
   static detect(): YtGameSdk | null {
-    return typeof window !== 'undefined' && window.ytgame ? window.ytgame : null;
+    if (typeof window === 'undefined') return null;
+    const sdk = window.ytgame;
+    if (!sdk) return null;
+    return sdk.IN_PLAYABLES_ENV === true ? sdk : null;
   }
 
   async initialize(): Promise<void> {
     const system = this.sdk.system;
     this.audioEnabled = this.safe(() => system?.isAudioEnabled?.(), true) ?? true;
 
-    // Die SDK-Callbacks werden genau einmal registriert und dann an die
-    // internen Handler-Sets verteilt — so bleibt Mehrfach-Abo moeglich.
+    // Die SDK-Rückrufe werden genau einmal registriert und dann an die
+    // internen Handler-Mengen verteilt — so bleibt Mehrfach-Abo möglich.
     this.safe(() =>
       system?.onAudioEnabledChange?.((enabled: boolean) => {
         this.audioEnabled = enabled;
@@ -59,6 +72,8 @@ export class YouTubePlatformService implements PlatformService {
         for (const handler of [...this.resumeHandlers]) handler();
       }),
     );
+
+    console.info(`[platform] ytgame SDK ${this.sdk.SDK_VERSION ?? '(unknown version)'}`);
   }
 
   firstFrameReady(): void {
@@ -71,17 +86,43 @@ export class YouTubePlatformService implements PlatformService {
 
   async loadGame(): Promise<string | null> {
     const load = this.sdk.game?.loadData;
-    if (!load) return null;
+    if (!load) {
+      // Auch ohne Speicher-API gilt: erst laden, dann speichern dürfen.
+      this.loadCompleted = true;
+      return null;
+    }
     try {
       const raw = await load();
-      return raw && raw.length > 0 ? raw : null;
+      // Das offizielle Beispiel beschreibt den aufgelösten Wert als
+      // „geparstes JSON oder undefined", `saveData` nimmt dagegen eine
+      // Zeichenkette. Beides wird akzeptiert, statt auf eine Variante zu
+      // wetten.
+      if (typeof raw === 'string') return raw.length > 0 ? raw : null;
+      if (raw && typeof raw === 'object') return JSON.stringify(raw);
+      return null;
     } catch (error) {
       this.logError('loadData failed', error);
       return null;
+    } finally {
+      this.loadCompleted = true;
     }
   }
 
   async saveGame(data: string): Promise<boolean> {
+    // Zertifizierungsanforderung: `loadData` MUSS vor `saveData` abgewartet
+    // werden. Ein Verstoss würde den bestehenden Spielstand überschreiben,
+    // bevor man ihn gesehen hat.
+    if (!this.loadCompleted) {
+      this.logWarning('saveData called before loadData completed — skipped');
+      return false;
+    }
+
+    const size = new Blob([data]).size;
+    if (size > SAVE_LIMIT_BYTES) {
+      this.logError(`save payload ${size} bytes exceeds the ${SAVE_LIMIT_BYTES} byte limit`);
+      return false;
+    }
+
     const save = this.sdk.game?.saveData;
     if (!save) {
       this.logWarning('saveData unavailable — progress not persisted');
@@ -117,15 +158,20 @@ export class YouTubePlatformService implements PlatformService {
     }
   }
 
-  async showRewardedAd(): Promise<RewardedOutcome> {
+  async showRewardedAd(rewardId: string): Promise<RewardedOutcome> {
     const request = this.sdk.ads?.requestRewardedAd;
     if (!request) return { status: 'unavailable', reason: 'no-ads-api' };
     try {
-      // Aufloesen bedeutet: Werbung wurde vollstaendig gesehen.
-      await request();
+      // Aufgelöst heisst: vollständig gesehen, Belohnung verdient.
+      await request(rewardId);
       return { status: 'rewarded' };
     } catch (error) {
-      return { status: 'dismissed', reason: describeError(error) };
+      // Abbruch und technischer Fehler sehen für den Spieler gleich aus —
+      // er bekommt nichts. Unterschieden wird nur fürs Log.
+      const reason = describeError(error);
+      return errorTypeOf(error) === 'API_UNAVAILABLE'
+        ? { status: 'unavailable', reason }
+        : { status: 'dismissed', reason };
     }
   }
 
@@ -158,19 +204,17 @@ export class YouTubePlatformService implements PlatformService {
 
   logError(message: string, error?: unknown): void {
     console.error(`[game] ${message}`, error ?? '');
-    this.safe(() =>
-      this.sdk.game?.logError?.(
-        error ? `${message}: ${describeError(error)}` : message,
-      ),
-    );
+    const full = error ? `${message}: ${describeError(error)}` : message;
+    // `health`, nicht `game` — der ursprüngliche Aufruf ging ins Leere.
+    this.safe(() => this.sdk.health?.logError?.(full));
   }
 
   logWarning(message: string): void {
     console.warn(`[game] ${message}`);
-    this.safe(() => this.sdk.game?.logWarning?.(message));
+    this.safe(() => this.sdk.health?.logWarning?.(message));
   }
 
-  /** Fuehrt einen SDK-Aufruf aus und schluckt jeden Fehler. */
+  /** Führt einen SDK-Aufruf aus und schluckt jeden Fehler. */
   private safe<T>(fn: () => T, fallback?: T): T | undefined {
     try {
       return fn();
@@ -181,7 +225,16 @@ export class YouTubePlatformService implements PlatformService {
   }
 }
 
+function errorTypeOf(error: unknown): string | undefined {
+  if (typeof error === 'object' && error !== null && 'errorType' in error) {
+    return (error as YtGameError).errorType;
+  }
+  return undefined;
+}
+
 function describeError(error: unknown): string {
+  const type = errorTypeOf(error);
+  if (type) return type;
   if (error instanceof Error) return error.message;
   return String(error);
 }

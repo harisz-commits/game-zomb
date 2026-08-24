@@ -8,6 +8,11 @@ export interface ResultsOptions {
   techParts: number;
   /** Endlosmodus: War dieser Lauf tiefer als jeder bisherige? */
   newBestDepth: boolean;
+  /**
+   * Angebot, die Ausbeute per Werbung zu verdoppeln. Fehlt es, wird kein
+   * Knopf gezeigt — das Spiel muss ohne Werbung vollständig sein.
+   */
+  onDoubleRewards?: () => Promise<boolean>;
   onContinue: () => void;
   onRetry: () => void;
 }
@@ -55,6 +60,34 @@ export function createResultsScreen(parent: HTMLElement, options: ResultsOptions
   loot.appendChild(el('span', 'chip loot', `◎ +${formatCompact(result.stats.coinsEarned)}`));
   if (options.techParts > 0) {
     loot.appendChild(el('span', 'chip loot', `⚙ +${formatCompact(options.techParts)}`));
+  }
+
+  if (options.onDoubleRewards && result.stats.coinsEarned > 0) {
+    const doubler = button('Double rewards', () => void run(), 'reward');
+    doubler.appendChild(el('span', 'reward-tag', 'AD'));
+    layer.add(doubler);
+
+    async function run(): Promise<void> {
+      // Sofort sperren: Ein zweiter Tipp waehrend der Einblendung wuerde die
+      // Belohnung ein zweites Mal anfordern.
+      doubler.disabled = true;
+      doubler.textContent = '…';
+      const granted = await options.onDoubleRewards!();
+      if (granted) {
+        doubler.textContent = 'Doubled!';
+        doubler.classList.add('granted');
+        for (const chip of loot.querySelectorAll('.chip')) chip.classList.add('doubled');
+        loot.replaceChildren(
+          el('span', 'chip loot doubled', `◎ +${formatCompact(result.stats.coinsEarned)}`),
+          ...(options.techParts > 0
+            ? [el('span', 'chip loot doubled', `⚙ +${formatCompact(options.techParts * 2)}`)]
+            : []),
+        );
+      } else {
+        // Kein Vorwurf, kein Fehlerdialog: Das Angebot verschwindet einfach.
+        doubler.remove();
+      }
+    }
   }
 
   const actions = layer.add(el('div', 'results-actions'));

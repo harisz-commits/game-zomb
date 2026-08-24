@@ -148,6 +148,10 @@ export class App {
         this.paused = true;
         this.state.paused = true;
         this.accumulator = 0;
+        // „Game MUST pause all execution after onPause" — die Render-Schleife
+        // wird angehalten, nicht nur die Simulation. Weiterzuzeichnen waere
+        // weiterhin Ausfuehrung, und auf einem Mobilgeraet auch Strom.
+        this.engine.stopRenderLoop(this.onFrame);
         this.bus.emit('platform:pause', {});
         // Fortschritt sichern, solange die Seite noch lebt.
         void this.saveManager.flush();
@@ -157,6 +161,7 @@ export class App {
         this.paused = false;
         this.state.paused = false;
         this.lastTimestamp = performance.now();
+        if (this.running) this.engine.runRenderLoop(this.onFrame);
         this.bus.emit('platform:resume', {});
       }),
       this.platform.subscribeAudioChange((enabled) => {

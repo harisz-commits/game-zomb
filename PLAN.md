@@ -4,8 +4,8 @@
 > technische Übersetzung davon: Architektur, Datenmodelle, Reihenfolge, Risiken,
 > Annahmen. Es wird pro Phase fortgeschrieben.
 
-Stand: Phasen 1 bis 7 abgeschlossen (ohne Supply Drops und Hazards).
-Phasen 8 und 9 offen.
+Stand: Phasen 1 bis 8 abgeschlossen (ohne Supply Drops und Hazards).
+Phase 9 offen.
 
 ---
 
@@ -846,3 +846,77 @@ Meilenstein-Einblendungen, Rekord gesetzt, 773 Münzen.
 Die allgemeinen Balance-Tests liefen bis hierher unter der Endlos-Kurve,
 obwohl sie von einer regulären Runde sprechen. Sie messen jetzt den Modus,
 den sie behaupten.
+
+
+---
+
+## 16. Phase 8 — YouTube, gegen die echte Doku geprüft
+
+Annahme A5 aus Phase 1 ist damit erledigt. Geprüft wurde gegen:
+
+- `developers.google.com/youtube/gaming/playables/reference/getting_started`
+- `.../playables/certification/requirements_integration`
+- `github.com/phaserjs/template-youtube-playables` (offizielles Beispiel)
+
+### Drei Fehler in der Annahme
+
+1. **`logError` und `logWarning` liegen unter `ytgame.health`, nicht unter
+   `ytgame.game`.** Sämtliche Fehlermeldungen des Spiels wären im
+   Playables-Container spurlos verschwunden — ausgerechnet der Kanal, über
+   den man erfährt, dass etwas kaputt ist.
+2. **`requestRewardedAd` erwartet eine `rewardId`.** Der Aufruf ohne Argument
+   wäre fehlgeschlagen.
+3. **Umgebungserkennung heisst `IN_PLAYABLES_ENV`.** Das blosse Vorhandensein
+   von `window.ytgame` genügt nicht: Seit das SDK-Script eingebunden ist, lädt
+   es auch in der Vercel-Vorschau — dort steht `IN_PLAYABLES_ENV` auf `false`,
+   und das Spiel muss den lokalen Dienst nehmen.
+
+### Vier Verstösse gegen die Zertifizierung
+
+| Anforderung | Vorher | Jetzt |
+|---|---|---|
+| SDK vor jedem Spielcode laden | fehlte ganz | erstes Script im `<head>` |
+| `loadData` MUSS vor `saveData` abgewartet werden | nicht erzwungen | `saveGame` verweigert vorher |
+| Spielstand ≤ 64 KiB | ungeprüft | wird vor dem Senden gemessen |
+| Nach `onPause` MUSS alle Ausführung ruhen | nur Simulation gestoppt | Render-Schleife wird angehalten |
+
+Dazu: **Der gesendete Score MUSS dem Bestwert im Spielstand entsprechen.**
+Bisher ging der Score DIESER Runde raus — nach einem schwächeren Lauf hätte
+YouTube einen niedrigeren Wert gesehen als das Spiel selbst anzeigt.
+
+### Die eine erlaubte externe Adresse
+
+`https://www.youtube.com/game_api/v1` ist die einzige Ressource, die das
+Bundle von aussen holt — von YouTube gefordert und von YouTube selbst
+ausgeliefert. Der Validator kennt sie namentlich und **schlägt fehl, wenn sie
+fehlt**: Ohne sie bliebe im Container der Ladespinner stehen, weil `gameReady`
+nie ankommt.
+
+Ausserhalb eines Containers schlägt der Aufruf fehl; das Spiel startet
+unverändert im lokalen Modus. Im Browser geprüft: Menü erscheint, einzige
+externe Anfrage ist das SDK.
+
+### Werbung
+
+Belohnte Werbung wird nur dort angeboten, wo der Spieler etwas GEWINNT, das
+er sonst nicht hätte — nie, um etwas zurückzukaufen, das ihm genommen wurde.
+Konkret: Verdopplung der Ausbeute am Rundenende. Wird sie abgebrochen,
+verschwindet das Angebot wortlos; es gibt keinen Fehlerdialog.
+
+Interstitials laufen über den `AdManager` und stehen nie in einer Runde: erst
+ab der dritten Runde, dann höchstens jede dritte, mit drei Minuten Abstand.
+Ein Szenenwechsel wartet nicht auf sie — eine hängende Einblendung darf das
+Spiel nicht festhalten.
+
+### Geprüft im Browser
+
+Ausbeute 32 → Angebot angenommen → 64, und die 64 landen tatsächlich im
+Geldbeutel (nicht nur in der Anzeige).
+
+### Was ich nicht prüfen kann
+
+Das Verhalten im echten Playables-Container. Die Signaturen stimmen mit der
+Doku überein und alles ist per Feature-Detection abgesichert, aber ob YouTube
+sich im Betrieb genau so verhält, zeigt erst eine Einreichung. Fehlermeldungen
+von dort gehen über `ytgame.health.logError` — dieser Kanal funktioniert
+jetzt, was er vorher nicht tat.
