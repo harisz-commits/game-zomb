@@ -1,5 +1,11 @@
 node_modules/
 dist/
-dist-zip/
-*.tsbuildinfo
+dist-ssr/
+*.local
 .DS_Store
+.vite/
+coverage/
+*.log
+.idea/
+.vscode/*
+!.vscode/extensions.json

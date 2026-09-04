@@ -1,65 +1,99 @@
-import { SceneInstrumentation } from '@babylonjs/core/Instrumentation/sceneInstrumentation';
-import type { Engine } from '@babylonjs/core/Engines/engine';
-import type { Scene } from '@babylonjs/core/scene';
-import { UiLayer, el } from './dom';
+import Phaser from 'phaser';
+import type { BattleContext } from '../core/BattleContext';
 
-/** Aktualisierungsintervall des Overlays in Millisekunden. */
-const REFRESH_MS = 500;
+export interface DebugActions {
+  forcePromotion: () => void;
+  spawnBoss: () => void;
+  spawnZombies: (count: number) => void;
+  addReinforcement: () => void;
+  killAll: () => void;
+  wipeArmy: () => void;
+}
 
 /**
- * Entwickler-Overlay mit FPS, Draw Calls und Mesh-Zahl.
+ * `?debug=true` overlay. Never included in a normal production run
+ * (see `isDebugEnabled`), so it is safe to be verbose here.
  *
- * Das groesste technische Risiko des Projekts ist die Crowd-Performance
- * (PLAN.md R1). Ohne sichtbare Zahlen faellt eine Verschlechterung erst spaet
- * auf — deshalb steht der Zaehler ab Phase 1.
- *
- * Draw Calls, nicht aktive Meshes: Instanzen desselben Master-Mesh erscheinen
- * einzeln in der Aktiv-Liste, kosten die GPU aber nur einen Aufruf. Die
- * Aktiv-Zahl wuerde also Alarm schlagen, wo gar keine Kosten entstehen.
- *
- * Sichtbar im Dev-Server oder mit `?debug=1`.
+ * Hotkeys: P promote, B boss, Z +20 zombies, R reinforcement, K kill all,
+ * G wipe the army (to exercise the game-over path).
  */
 export class DebugOverlay {
-  private readonly layer: UiLayer;
-  private readonly line: HTMLElement;
-  private instrumentation: SceneInstrumentation | null = null;
-  private lastRefresh = 0;
+  private readonly text: Phaser.GameObjects.Text;
+  private readonly bg: Phaser.GameObjects.Rectangle;
+  private accumulator = 0;
 
-  static isEnabled(isDev: boolean): boolean {
-    if (isDev) return true;
-    return new URLSearchParams(window.location.search).get('debug') === '1';
-  }
+  constructor(
+    private readonly ctx: BattleContext,
+    actions: DebugActions,
+  ) {
+    const scene = ctx.scene;
 
-  constructor(parent: HTMLElement) {
-    this.layer = new UiLayer(parent, 'debug');
-    this.line = this.layer.add(el('div', 'debug-line', '—'));
-  }
+    this.bg = scene.add.rectangle(0, 0, 230, 190, 0x05070c, 0.72).setOrigin(0, 0).setDepth(300);
+    this.text = scene.add
+      .text(0, 0, '', {
+        fontFamily: 'monospace',
+        fontSize: '11px',
+        color: '#8affc1',
+        lineSpacing: 2,
+      })
+      .setOrigin(0, 0)
+      .setDepth(301);
 
-  /**
-   * Misst die Zeit selbst statt sich auf ein uebergebenes Delta zu verlassen:
-   * das Overlay laeuft im Render-Takt, nicht im Simulationstakt.
-   */
-  update(engine: Engine, scene: Scene | null): void {
-    if (!scene) return;
-    if (!this.instrumentation || this.instrumentation.scene !== scene) {
-      this.instrumentation?.dispose();
-      this.instrumentation = new SceneInstrumentation(scene);
-      this.instrumentation.captureFrameTime = true;
+    ctx.uiLayer.add([this.bg, this.text]);
+
+    const keyboard = scene.input.keyboard;
+    if (keyboard) {
+      keyboard.on('keydown-P', actions.forcePromotion);
+      keyboard.on('keydown-B', actions.spawnBoss);
+      keyboard.on('keydown-Z', () => actions.spawnZombies(20));
+      keyboard.on('keydown-R', actions.addReinforcement);
+      keyboard.on('keydown-K', actions.killAll);
+      keyboard.on('keydown-G', actions.wipeArmy);
     }
-
-    const now = performance.now();
-    if (now - this.lastRefresh < REFRESH_MS) return;
-    this.lastRefresh = now;
-
-    const fps = Math.round(engine.getFps());
-    const draws = this.instrumentation.drawCallsCounter.current;
-    const frameMs = this.instrumentation.frameTimeCounter.lastSecAverage.toFixed(1);
-    this.line.textContent = `${fps} fps · ${frameMs} ms · ${draws} draws · ${scene.meshes.length} meshes`;
   }
 
-  dispose(): void {
-    this.instrumentation?.dispose();
-    this.instrumentation = null;
-    this.layer.dispose();
+  resize(width: number, height: number): void {
+    const x = 10;
+    const y = Math.min(height - 200, 110);
+    this.bg.setPosition(x, y).setSize(Math.min(240, width - 20), 190);
+    this.text.setPosition(x + 8, y + 8);
+  }
+
+  update(dt: number): void {
+    this.accumulator += dt;
+    if (this.accumulator < 0.25) return;
+    this.accumulator = 0;
+
+    const ctx = this.ctx;
+    const heap = performance.memory
+      ? `${(performance.memory.usedJSHeapSize / 1048576).toFixed(0)} MB`
+      : 'n/a';
+
+    const lines = [
+      `FPS         ${ctx.quality.fps.toFixed(0)}  [${ctx.quality.level}]`,
+      `HEAP        ${heap}`,
+      `SOLDIERS    ${ctx.army.count} (${ctx.army.currentTier.id})`,
+      `ZOMBIES     ${ctx.enemies.activeCount}`,
+      `TRACERS     ${ctx.effects.debugCounts.tracers}`,
+      `PARTICLES   ${ctx.effects.debugCounts.particles}`,
+      `DPS ~       ${Math.round(ctx.combat.estimatedDps)}`,
+      `FIRE RATE   ${ctx.combat.currentFireRate.toFixed(2)}/s`,
+      `SPAWN RATE  ${ctx.director
+        .spawnRate({
+          elapsed: ctx.runtime.elapsed,
+          armyPower: ctx.army.armyPower,
+          promotionCount: ctx.promotion.promotions,
+          kills: ctx.score.kills,
+          armySize: ctx.army.count,
+          activeZombies: ctx.enemies.activeCount,
+        })
+        .toFixed(2)}/s`,
+      `PROMOTIONS  ${ctx.promotion.promotions}`,
+      `TIER        ${ctx.army.currentTier.name} (x${ctx.army.tierPower})`,
+      `SEED        ${ctx.rng.seed}`,
+      `P promote  B boss  Z +20`,
+      `R reinforce  K kill all  G wipe`,
+    ];
+    this.text.setText(lines.join('\n'));
   }
 }

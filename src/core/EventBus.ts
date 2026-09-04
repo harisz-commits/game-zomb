@@ -1,55 +1,91 @@
-import type { GameEventMap, GameEventName } from './Types';
-
-export type Unsubscribe = () => void;
-
-type Handler<K extends GameEventName> = (payload: GameEventMap[K]) => void;
+import type { EnemyKind, Rarity, UpgradeDefinition, UpgradeFamily } from '../types/game';
 
 /**
- * Minimaler, typisierter Event-Bus. Systeme publizieren, Szenen und UI
- * abonnieren — so kennen sich Systeme untereinander nicht.
+ * Central, typed event bus.
  *
- * Handler, die waehrend eines `emit` hinzukommen oder wegfallen, wirken erst
- * beim naechsten `emit`: es wird ueber eine Kopie der Liste iteriert.
+ * Systems never call into each other directly; they publish facts here.
+ * This keeps ArmySystem / CombatSystem / UI mutually independent and makes the
+ * whole battle simulation testable without a scene.
  */
-export class EventBus {
-  private readonly handlers = new Map<GameEventName, Set<Handler<never>>>();
+export const GameEvent = {
+  ENEMY_KILLED: 'ENEMY_KILLED',
+  ENEMY_DAMAGED: 'ENEMY_DAMAGED',
+  SOLDIER_ADDED: 'SOLDIER_ADDED',
+  SOLDIER_DIED: 'SOLDIER_DIED',
+  ARMY_CHANGED: 'ARMY_CHANGED',
+  REINFORCEMENT_GAINED: 'REINFORCEMENT_GAINED',
+  SUPPLY_DROP_COLLECTED: 'SUPPLY_DROP_COLLECTED',
+  PROMOTION_READY: 'PROMOTION_READY',
+  PROMOTION_SELECTED: 'PROMOTION_SELECTED',
+  PROMOTION_COMPLETE: 'PROMOTION_COMPLETE',
+  DOCTRINE_UNLOCKED: 'DOCTRINE_UNLOCKED',
+  BOSS_SPAWNED: 'BOSS_SPAWNED',
+  BOSS_KILLED: 'BOSS_KILLED',
+  PHASE_CHANGED: 'PHASE_CHANGED',
+  ENDLESS_MODIFIER: 'ENDLESS_MODIFIER',
+  TUTORIAL_HINT: 'TUTORIAL_HINT',
+  EXPLOSION: 'EXPLOSION',
+  GAME_OVER: 'GAME_OVER',
+  VICTORY: 'VICTORY',
+} as const;
 
-  on<K extends GameEventName>(event: K, handler: Handler<K>): Unsubscribe {
+export type GameEventName = (typeof GameEvent)[keyof typeof GameEvent];
+
+export interface GameEventPayloads {
+  [GameEvent.ENEMY_KILLED]: {
+    kind: EnemyKind;
+    elite: boolean;
+    boss: boolean;
+    x: number;
+    y: number;
+    points: number;
+    score: number;
+    byExplosion: boolean;
+    byCrit: boolean;
+  };
+  [GameEvent.ENEMY_DAMAGED]: { x: number; y: number; amount: number; crit: boolean };
+  [GameEvent.SOLDIER_ADDED]: { count: number; total: number };
+  [GameEvent.SOLDIER_DIED]: { x: number; y: number; remaining: number };
+  [GameEvent.ARMY_CHANGED]: { count: number; tierIndex: number };
+  [GameEvent.REINFORCEMENT_GAINED]: { progress: number; threshold: number };
+  [GameEvent.SUPPLY_DROP_COLLECTED]: { label: string; soldiers: number };
+  [GameEvent.PROMOTION_READY]: { promotionIndex: number };
+  [GameEvent.PROMOTION_SELECTED]: { upgrade: UpgradeDefinition; rarity: Rarity };
+  [GameEvent.PROMOTION_COMPLETE]: { tierName: string; count: number };
+  [GameEvent.DOCTRINE_UNLOCKED]: { family: UpgradeFamily; name: string; level: number };
+  [GameEvent.BOSS_SPAWNED]: { name: string };
+  [GameEvent.BOSS_KILLED]: { name: string };
+  [GameEvent.PHASE_CHANGED]: { label: string };
+  [GameEvent.ENDLESS_MODIFIER]: { label: string };
+  [GameEvent.TUTORIAL_HINT]: { text: string; duration: number };
+  [GameEvent.EXPLOSION]: { x: number; y: number; radius: number };
+  [GameEvent.GAME_OVER]: Record<string, never>;
+  [GameEvent.VICTORY]: Record<string, never>;
+}
+
+type Handler<K extends GameEventName> = (payload: GameEventPayloads[K]) => void;
+
+export class EventBus {
+  private readonly handlers = new Map<string, Set<(payload: unknown) => void>>();
+
+  on<K extends GameEventName>(event: K, handler: Handler<K>): () => void {
     let set = this.handlers.get(event);
     if (!set) {
       set = new Set();
       this.handlers.set(event, set);
     }
-    set.add(handler as Handler<never>);
-    return () => {
-      set.delete(handler as Handler<never>);
-    };
+    set.add(handler as (payload: unknown) => void);
+    return () => this.off(event, handler);
   }
 
-  once<K extends GameEventName>(event: K, handler: Handler<K>): Unsubscribe {
-    const off = this.on(event, (payload) => {
-      off();
-      handler(payload);
-    });
-    return off;
+  off<K extends GameEventName>(event: K, handler: Handler<K>): void {
+    this.handlers.get(event)?.delete(handler as (payload: unknown) => void);
   }
 
-  emit<K extends GameEventName>(event: K, payload: GameEventMap[K]): void {
+  emit<K extends GameEventName>(event: K, payload: GameEventPayloads[K]): void {
     const set = this.handlers.get(event);
-    if (!set || set.size === 0) return;
-    for (const handler of [...set]) {
-      try {
-        (handler as Handler<K>)(payload);
-      } catch (error) {
-        // Ein fehlerhafter Zuhoerer darf die uebrigen nicht blockieren.
-        console.error(`[EventBus] handler for "${String(event)}" failed`, error);
-      }
-    }
-  }
-
-  /** Anzahl registrierter Handler — nur fuer Tests und Leak-Diagnose. */
-  listenerCount(event: GameEventName): number {
-    return this.handlers.get(event)?.size ?? 0;
+    if (!set) return;
+    for (const handler of set) handler(payload);
   }
 
   clear(): void {

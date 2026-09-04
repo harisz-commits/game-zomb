@@ -1,9 +1,9 @@
 {
-  "name": "last-stand-zombie-front",
-  "version": "0.1.0",
+  "name": "last-line",
   "private": true,
+  "version": "0.1.0",
+  "description": "LAST LINE - a casual army-growth horde survival game built for YouTube Playables",
   "type": "module",
-  "description": "Last Stand: Zombie Front - HTML5/WebGL crowd action game for YouTube Playables",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
@@ -11,16 +11,14 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "youtube:validate": "node scripts/validate-build.mjs",
-    "youtube:build": "npm run build && npm run youtube:validate && node scripts/pack-zip.mjs"
+    "size": "node scripts/report-size.mjs"
   },
   "dependencies": {
-    "@babylonjs/core": "^9.22.1"
+    "phaser": "^3.90.0"
   },
   "devDependencies": {
-    "@types/node": "^22.20.1",
-    "typescript": "^5.9.3",
-    "vite": "^8.2.2",
-    "vitest": "^4.1.11"
+    "typescript": "^5.9.2",
+    "vite": "^6.3.5",
+    "vitest": "^3.2.4"
   }
 }

@@ -1,36 +1,44 @@
 import { defineConfig } from 'vite';
-import { fileURLToPath, URL } from 'node:url';
 
 /**
- * YouTube Playables verlangt ein autarkes Bundle:
- * - relative Asset-Pfade (base: './')
- * - keine externen Requests zur Laufzeit
- * - index.html im Root des Build-Outputs
+ * Vite configuration tuned for YouTube Playables:
+ *  - `base: './'` keeps every generated asset reference relative (hard requirement).
+ *  - Assets below 8 KiB are inlined so the bundle ships fewer, smaller files.
+ *  - No manual chunking: Playables prefer a small number of files over many
+ *    round trips, and the whole game must be available at first interaction.
  */
 export default defineConfig({
   base: './',
-  resolve: {
-    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
-  },
   build: {
+    target: 'es2019',
     outDir: 'dist',
-    emptyOutDir: true,
-    target: 'es2020',
+    assetsDir: 'assets',
     assetsInlineLimit: 8192,
+    cssCodeSplit: false,
     sourcemap: false,
-    modulePreload: { polyfill: false },
-    // Babylon allein liegt ueber 500 kB; die Warnung waere Dauerrauschen.
-    // Die harte Grenze prueft stattdessen "npm run youtube:validate".
+    minify: 'esbuild',
+    reportCompressedSize: true,
     chunkSizeWarningLimit: 2048,
     rollupOptions: {
       output: {
-        // Ein einziges JS-Bundle: weniger Requests, kein dynamisches
-        // Nachladen, das im Playables-Container fehlschlagen koennte.
-        codeSplitting: false,
-        entryFileNames: 'assets/[name]-[hash].js',
-        assetFileNames: 'assets/[name]-[hash][extname]',
+        // Engine and game code are split so the (large, stable) Phaser chunk
+        // is cacheable and the game chunk stays small and easy to inspect.
+        manualChunks(id) {
+          if (id.includes('node_modules/phaser')) return 'phaser';
+          return undefined;
+        },
       },
     },
   },
-  server: { host: true, port: 5173 },
+  esbuild: {
+    drop: ['debugger'],
+  },
+  server: {
+    host: true,
+    port: 5173,
+  },
+  preview: {
+    host: true,
+    port: 4173,
+  },
 });

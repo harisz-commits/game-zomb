@@ -1,21 +1,45 @@
-import { GameScene } from './GameScene';
-import type { SceneId } from '../core/Types';
+import Phaser from 'phaser';
+import { GAME_TITLE } from '../config/GameConfig';
+import { loadSaveWithTimeout } from '../core/Services';
+import { generateTextures } from '../render/TextureFactory';
+import { audio } from '../systems/AudioSystem';
+import { playables } from '../systems/YouTubePlayablesAdapter';
 
 /**
- * Erste Szene: laedt den Spielstand und gibt sofort weiter.
- * Nichts Sichtbares — der Boot-Splash aus `index.html` steht noch.
+ * Boot: generate every placeholder texture, wire the Playables adapter, load
+ * the save, then hand over to the menu.
+ *
+ * There are no network loads at all, so "time to interactive" is essentially
+ * texture generation plus one (timeout-guarded) cloud save read.
  */
-export class BootScene extends GameScene {
-  readonly id: SceneId = 'boot';
+export class BootScene extends Phaser.Scene {
+  constructor() {
+    super('Boot');
+  }
 
-  async enter(): Promise<void> {
-    try {
-      this.ctx.state.save = await this.ctx.save.load();
-    } catch (error) {
-      this.ctx.platform.logError('save load failed — using defaults', error);
-      this.ctx.state.save = this.ctx.save.current;
-    }
-    this.ctx.state.audioEnabled = this.ctx.platform.isAudioEnabled();
-    this.ctx.requestScene('loading');
+  create(): void {
+    playables.init();
+    audio.init();
+
+    generateTextures(this);
+
+    // The first frame is on screen after the first render pass.
+    this.game.events.once(Phaser.Core.Events.POST_RENDER, () => {
+      playables.firstFrameReady();
+      this.hideSplash();
+    });
+
+    document.title = GAME_TITLE;
+
+    void loadSaveWithTimeout().then(() => {
+      this.scene.start('Menu');
+    });
+  }
+
+  private hideSplash(): void {
+    const splash = document.getElementById('boot-splash');
+    if (!splash) return;
+    splash.classList.add('hidden');
+    window.setTimeout(() => splash.remove(), 400);
   }
 }
