@@ -50,10 +50,14 @@ export class LaneObject {
 
   /** Seconds of white impact flash left. */
   flash = 0;
+  /** Blocks re-arming the flash, so sustained fire pulses instead of sticking. */
+  flashCooldown = 0;
   /** Ordering within its lane; the lowest sequence is the front object. */
   sequence = 0;
   /** Last value written to `label`; guards against per-frame re-rasterising. */
   shownHp = -1;
+  /** Slot the crate eases toward after the stack advances. */
+  targetY = 0;
 
   get top(): number {
     return this.y - this.height / 2;

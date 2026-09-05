@@ -252,8 +252,11 @@ export class CombatSystem {
       }
 
       const zombie = soldier.target && soldier.target.active ? soldier.target : null;
+      // A barrier counted down to zero is harmless - stop wasting fire on it.
       const barrierInReach =
-        barrier && barrier.active && soldier.y - barrier.y <= range ? barrier : null;
+        barrier && barrier.active && barrier.hp > 0 && soldier.y - barrier.y <= range
+          ? barrier
+          : null;
 
       // Whatever is closest to the line is the immediate threat.
       const shootBarrier =

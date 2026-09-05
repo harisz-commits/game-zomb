@@ -4,32 +4,37 @@ import type { BattleContext } from '../core/BattleContext';
 import { GameEvent } from '../core/EventBus';
 import { LaneObject, type Lane, type LaneReward } from '../entities/LaneObject';
 import { TEX } from '../render/TextureFactory';
-import { clamp } from '../utils/MathUtils';
+import { clamp, damp } from '../utils/MathUtils';
 import { ObjectPool } from '../utils/ObjectPool';
 import { audio } from './AudioSystem';
 
 const MAX_LANE_OBJECTS = 26;
-const FLASH_DURATION = 0.06;
+const FLASH_DURATION = 0.05;
+// Without a cooldown the crate under sustained fire re-arms its flash every
+// frame and renders as a solid white block instead of ice.
+const FLASH_COOLDOWN = 0.16;
 
 /**
- * Everything that travels down a lane and has to be shot.
+ * The two things on the bridge that have to be shot open.
  *
- * This is the system that creates the game's central decision. Soldiers fire
- * straight ahead, so the formation can only be pointed at one lane at a time:
+ * SUPPLY LANE (left) - a *static* stack of frozen crates. It does not drift:
+ * the front crate parks just above the firing line and waits as long as you
+ * like. It only advances when you break one, and then the stack slides down
+ * and a new crate is queued at the top. Nothing is ever lost by ignoring it -
+ * the cost of farming here is simply that nobody is shooting the horde.
  *
- *   - stand left  -> break the frozen supply block and take the reward, while
- *                    the horde advances unopposed;
- *   - stand right -> hold the horde, and watch the supply block drift past.
- *
- * Supply blocks arrive as a train: one tough reward block followed by a run of
- * 1 HP fillers that pop in a satisfying burst once the big one goes.
+ * COMBAT LANE (right) - penalty barriers that ride down with the horde. The
+ * number printed on a barrier IS the penalty. Shooting counts it down toward
+ * zero, so partial suppression always pays off; whatever is left when it
+ * reaches the line is what it costs you in soldiers.
  */
 export class LaneObjectSystem {
   private readonly pool: ObjectPool<LaneObject>;
   readonly active: LaneObject[] = [];
 
-  private nextSequence = 0;
-  private supplyTail = 0;
+  /** Supply crates, front (closest to the army) first. */
+  private readonly stack: LaneObject[] = [];
+
   private nextBarrierAt: number = BALANCE.BARRIER_FIRST_AT;
   private started = false;
 
@@ -43,7 +48,7 @@ export class LaneObjectSystem {
         o.icon.setVisible(false);
       },
       MAX_LANE_OBJECTS,
-      8,
+      10,
     );
   }
 
@@ -63,7 +68,7 @@ export class LaneObjectSystem {
         color: '#ffffff',
         fontStyle: 'bold',
         stroke: '#0a0d14',
-        strokeThickness: 6,
+        strokeThickness: 7,
       })
       .setOrigin(0.5)
       .setVisible(false)
@@ -76,75 +81,76 @@ export class LaneObjectSystem {
   }
 
   create(): void {
-    // Start the conveyor just above the firing line so the very first block is
-    // immediately a real decision, not something the player waits ten seconds
-    // for.
-    this.supplyTail = this.ctx.army.frontY - 220;
     this.started = false;
+    this.nextBarrierAt = BALANCE.BARRIER_FIRST_AT;
   }
 
   /* --------------------------------------------------------------- query -- */
 
-  /** The closest (lowest) live object in a lane - the only shootable one. */
-  front(lane: Lane): LaneObject | null {
+  /** The only shootable crate: the one at the front of the stack. */
+  get supplyFront(): LaneObject | null {
+    return this.stack.length > 0 ? this.stack[0] : null;
+  }
+
+  /** The barrier closest to the line. */
+  get combatFront(): LaneObject | null {
     let best: LaneObject | null = null;
     for (const item of this.active) {
-      if (!item.active || item.lane !== lane) continue;
+      if (!item.active || item.lane !== 'COMBAT') continue;
       if (!best || item.y > best.y) best = item;
     }
     return best;
   }
 
-  get supplyFront(): LaneObject | null {
-    return this.front('SUPPLY');
-  }
-
-  get combatFront(): LaneObject | null {
-    return this.front('COMBAT');
+  front(lane: Lane): LaneObject | null {
+    return lane === 'SUPPLY' ? this.supplyFront : this.combatFront;
   }
 
   /* -------------------------------------------------------------- damage -- */
 
-  /** Returns true when the hit destroyed the object. */
+  /** Returns true when the hit finished the object off. */
   applyDamage(item: LaneObject, amount: number): boolean {
     if (!item.active || amount <= 0) return false;
 
     item.hp -= amount;
-    if (item.flash <= 0) {
+    if (item.flashCooldown <= 0) {
       item.flash = FLASH_DURATION;
+      item.flashCooldown = FLASH_COOLDOWN;
       item.sprite.setTintFill(0xffffff);
     }
 
     if (item.hp <= 0) {
-      this.destroy(item);
-      return true;
+      item.hp = 0;
+      if (item.kind === 'ICE') {
+        this.breakCrate(item);
+        return true;
+      }
+      // A fully suppressed barrier is harmless but stays on the road until it
+      // passes the line - it just no longer costs anything.
+      return false;
     }
     return false;
   }
 
-  private destroy(item: LaneObject): void {
+  private breakCrate(item: LaneObject): void {
     const x = item.x;
     const y = item.y;
 
-    if (item.kind === 'ICE') {
-      this.ctx.effects.impact(x, y, 0x9fe3ff, 8);
-      this.ctx.effects.explosion(x, y, item.width * 0.5, 0x6fd6ff);
-      if (item.reward) this.grantReward(item.reward, x, y);
-      audio.play('reinforce', 0.7);
-    } else {
-      this.ctx.effects.explosion(x, y, item.width * 0.45, 0xff6b6b);
-      this.ctx.effects.floatingText(x, y - 30, 'CLEARED', '#7fd4a2', 24);
-      audio.play('explosion', 0.6);
-    }
+    this.ctx.effects.impact(x, y, 0x9fe3ff, 9);
+    this.ctx.effects.explosion(x, y, item.width * 0.5, 0x6fd6ff);
+    if (item.reward) this.grantReward(item.reward, x, y);
+    audio.play('reinforce', 0.7);
 
+    const index = this.stack.indexOf(item);
+    if (index >= 0) this.stack.splice(index, 1);
     this.release(item);
+    this.relayoutStack();
   }
 
   private grantReward(reward: LaneReward, x: number, y: number): void {
     const effects = this.ctx.effects;
     switch (reward.type) {
       case 'SOLDIERS': {
-        // COMMAND cards ("Supply Lines", "Rapid Mobilization") scale this.
         const amount = Math.max(
           1,
           Math.round(reward.amount * this.ctx.upgrades.modifiers.supplyDropMultiplier),
@@ -155,11 +161,11 @@ export class LaneObjectSystem {
       }
       case 'DAMAGE':
         this.ctx.upgrades.addBonus({ damageMultiplier: 1 + reward.percent / 100 });
-        effects.floatingText(x, y - 24, `+${reward.percent}% DMG`, '#ff8a4c', 28);
+        effects.floatingText(x, y - 24, `WEAPON +${reward.percent}%`, '#ff8a4c', 26);
         break;
       case 'FIRE_RATE':
         this.ctx.upgrades.addBonus({ fireRateMultiplier: 1 + reward.percent / 100 });
-        effects.floatingText(x, y - 24, `+${reward.percent}% ROF`, '#ffc65c', 28);
+        effects.floatingText(x, y - 24, `FIRE RATE +${reward.percent}%`, '#ffc65c', 24);
         break;
       case 'DOUBLE_POINTS':
         this.ctx.army.startDoubleReinforcements(reward.seconds);
@@ -179,110 +185,134 @@ export class LaneObjectSystem {
 
     if (!this.started && this.ctx.runtime.elapsed >= BALANCE.SUPPLY_FIRST_AT) {
       this.started = true;
+      this.relayoutStack();
     }
+    if (this.started) this.refillStack();
     this.maybeSpawnBarrier();
 
     const frontLine = this.ctx.army.frontY;
     const drift = WORLD_SCROLL_SPEED * dt;
 
-    // The tail marks the top of the spawned train, so it has to travel with
-    // the train. Leaving it fixed made it fall permanently below the refill
-    // ceiling after the first fill, and the lane silently ran dry.
-    this.supplyTail += drift;
-
     for (let i = this.active.length - 1; i >= 0; i--) {
       const item = this.active[i];
-      item.y += drift;
 
+      if (item.lane === 'COMBAT') {
+        item.y += drift;
+      } else {
+        // The stack holds position and only eases into a new slot after a
+        // crate in front of it was broken.
+        item.y = damp(item.y, item.targetY, BALANCE.LANE_STACK_SLIDE, dt);
+      }
+
+      if (item.flashCooldown > 0) item.flashCooldown -= dt;
       if (item.flash > 0) {
         item.flash -= dt;
         if (item.flash <= 0) item.sprite.clearTint();
       }
 
       item.sprite.setPosition(item.x, item.y);
-      item.icon.setPosition(item.x, item.y - item.height * 0.26);
+      item.icon.setPosition(item.x, item.y - item.height * 0.28);
       item.label.setPosition(item.x, item.y + item.height * 0.1);
 
-      // Re-rasterising a Text object is expensive; only do it when the
-      // displayed number actually changes.
-      const shown = Math.max(0, Math.ceil(item.hp));
+      // Re-rasterising a Text object is expensive: only write when it changes.
+      const shown =
+        item.kind === 'ICE' ? Math.max(0, Math.ceil(item.hp)) : this.remainingPenalty(item);
       if (shown !== item.shownHp) {
         item.shownHp = shown;
-        item.label.setText(String(shown));
+        item.label.setText(item.kind === 'ICE' ? String(shown) : `-${shown}`);
+        if (item.kind === 'BARRIER' && shown === 0) {
+          item.label.setColor('#7fd4a2');
+          item.sprite.setAlpha(0.45);
+        }
       }
 
-      // Ice frosts over as it takes damage, so progress reads at a glance.
       if (item.kind === 'ICE' && item.flash <= 0) {
         item.sprite.setAlpha(0.82 + item.hpRatio * 0.18);
       }
 
-      if (item.top > frontLine) this.miss(item, i);
+      // Only barriers ever reach the line; the stack never does.
+      if (item.lane === 'COMBAT' && item.top > frontLine) this.resolveBarrier(item);
     }
-
-    if (this.started) this.refillSupplyTrain();
   }
 
-  private miss(item: LaneObject, index: number): void {
-    if (item.kind === 'ICE') {
-      // Only call out a missed *reward* block; fillers stream past constantly
-      // and would spam the screen.
-      if (item.maxHp > BALANCE.LANE_FILLER_HP) {
-        this.ctx.effects.floatingText(item.x, this.ctx.army.frontY - 30, 'MISSED', '#8a99b3', 24);
-      }
-      this.ctx.effects.impact(item.x, item.y, 0x5f6c82, 3);
-    } else {
-      // A barrier that gets through takes a bite out of the army.
-      const lost = item.penalty;
+  /** Soldiers this barrier still costs. Counts down as you shoot it. */
+  private remainingPenalty(item: LaneObject): number {
+    return Math.max(0, Math.ceil(item.penalty * item.hpRatio));
+  }
+
+  private resolveBarrier(item: LaneObject): void {
+    const lost = this.remainingPenalty(item);
+    const frontY = this.ctx.army.frontY;
+
+    if (lost > 0) {
       for (let i = 0; i < lost; i++) {
         this.ctx.army.damageAt(item.x, Number.POSITIVE_INFINITY);
       }
-      this.ctx.effects.explosion(item.x, this.ctx.army.frontY, 150, 0xff5a5a);
-      this.ctx.effects.floatingText(item.x, this.ctx.army.frontY - 50, `-${lost}`, '#ff5a5a', 40);
+      this.ctx.effects.explosion(item.x, frontY, 150, 0xff5a5a);
+      this.ctx.effects.floatingText(item.x, frontY - 50, `-${lost}`, '#ff5a5a', 40);
       this.ctx.effects.shake(0.014, 0.35);
       audio.play('gameover', 0.5);
+    } else {
+      this.ctx.effects.floatingText(item.x, frontY - 40, 'BLOCKED', '#7fd4a2', 28);
+      audio.play('ui', 0.6);
     }
-    void index;
     this.release(item);
   }
 
   private release(item: LaneObject): void {
     const index = this.active.indexOf(item);
     if (index >= 0) this.active.splice(index, 1);
+    const stackIndex = this.stack.indexOf(item);
+    if (stackIndex >= 0) this.stack.splice(stackIndex, 1);
     this.pool.release(item);
   }
 
-  /* --------------------------------------------------------------- spawn -- */
+  /* --------------------------------------------------------------- stack -- */
 
-  /** Keeps the supply lane stocked a screen-height ahead of the army. */
-  private refillSupplyTrain(): void {
-    // Keep the lane stocked a little past the top of the screen, so blocks are
-    // always streaming into view.
-    const ceiling = this.ctx.viewport.visibleTop - 240;
-    let guard = 0;
-    while (this.supplyTail > ceiling && guard++ < 4) {
-      this.appendSupplyTrain();
+  /** Recomputes every crate's slot; front crate parks above the firing line. */
+  private relayoutStack(): void {
+    let y = this.ctx.army.frontY - BALANCE.LANE_STACK_FRONT_OFFSET;
+    for (const item of this.stack) {
+      item.targetY = y - item.height / 2;
+      y -= item.height + BALANCE.LANE_BLOCK_GAP;
     }
   }
 
-  private appendSupplyTrain(): void {
-    const rng = this.ctx.rng;
-    const big = this.spawnIce(this.bigBlockHp(), BALANCE.LANE_BIG_BLOCK_HEIGHT, this.rollReward());
-    if (!big) return;
+  /** Queues new crates at the back until the stack is deep enough. */
+  private refillStack(): void {
+    let guard = 0;
+    while (this.stack.length < BALANCE.LANE_STACK_MIN && guard++ < 4) {
+      const before = this.stack.length;
+      this.appendTrain();
+      if (this.stack.length === before) break; // pool exhausted
+    }
+  }
 
-    const fillers = rng.int(BALANCE.LANE_FILLER_COUNT[0], BALANCE.LANE_FILLER_COUNT[1]);
+  /** One weapon crate followed by a run of "+1" fillers. */
+  private appendTrain(): void {
+    const weapon = this.spawnCrate(
+      this.weaponCrateHp(),
+      BALANCE.LANE_BIG_BLOCK_HEIGHT,
+      this.rollReward(),
+    );
+    if (!weapon) return;
+
+    const fillers = this.ctx.rng.int(BALANCE.LANE_FILLER_COUNT[0], BALANCE.LANE_FILLER_COUNT[1]);
     for (let i = 0; i < fillers; i++) {
-      this.spawnIce(BALANCE.LANE_FILLER_HP, BALANCE.LANE_FILLER_BLOCK_HEIGHT, {
+      this.spawnCrate(BALANCE.LANE_FILLER_HP, BALANCE.LANE_FILLER_BLOCK_HEIGHT, {
         type: 'SOLDIERS',
         amount: BALANCE.LANE_FILLER_SOLDIERS,
       });
     }
+    this.relayoutStack();
   }
 
   /**
-   * A block should cost roughly a second of the army's full attention, so it
-   * stays a real decision at every army size instead of melting late on.
+   * A weapon crate should cost roughly a second of the army's undivided
+   * attention. Priced in DPS rather than as a flat number, it stays a real
+   * decision at every army size instead of melting instantly late on.
    */
-  private bigBlockHp(): number {
+  private weaponCrateHp(): number {
     const dpsCost = this.ctx.combat.estimatedDps * BALANCE.LANE_BLOCK_DPS_SECONDS;
     const timeFloor =
       BALANCE.LANE_BLOCK_BASE_HP *
@@ -295,17 +325,17 @@ export class LaneObjectSystem {
     const pick = row ?? BALANCE.LANE_REWARDS[0];
     switch (pick.kind) {
       case 'DAMAGE':
-        return { type: 'DAMAGE', percent: pick.percent ?? 8 };
+        return { type: 'DAMAGE', percent: pick.percent ?? 10 };
       case 'FIRE_RATE':
-        return { type: 'FIRE_RATE', percent: pick.percent ?? 6 };
+        return { type: 'FIRE_RATE', percent: pick.percent ?? 8 };
       case 'DOUBLE_POINTS':
         return { type: 'DOUBLE_POINTS', seconds: pick.seconds ?? 10 };
       default:
-        return { type: 'SOLDIERS', amount: pick.amount ?? 5 };
+        return { type: 'SOLDIERS', amount: pick.amount ?? 10 };
     }
   }
 
-  private spawnIce(hp: number, height: number, reward: LaneReward): LaneObject | null {
+  private spawnCrate(hp: number, height: number, reward: LaneReward): LaneObject | null {
     const item = this.pool.obtain();
     if (!item) return null;
 
@@ -318,39 +348,41 @@ export class LaneObjectSystem {
     item.width = width;
     item.height = height;
     item.x = viewport.supplyLaneCenterX;
-    // Stack upward from the tail of the train.
-    this.supplyTail -= height / 2 + BALANCE.LANE_BLOCK_GAP;
-    item.y = this.supplyTail;
-    this.supplyTail -= height / 2;
-
     item.hp = hp;
     item.maxHp = hp;
     item.reward = reward;
     item.penalty = 0;
     item.flash = 0;
+    item.flashCooldown = 0;
     item.shownHp = -1;
-    item.sequence = this.nextSequence++;
+
+    // Enter from above the last crate so it slides in rather than popping.
+    const last = this.stack[this.stack.length - 1];
+    item.y = last ? last.targetY - last.height : viewport.visibleTop - 120;
+    item.targetY = item.y;
 
     item.sprite
       .setTexture(TEX.ice)
       .setVisible(true)
       .setDisplaySize(width, height)
       .setPosition(item.x, item.y)
-      .setAlpha(0.95)
+      .setAlpha(1)
       .clearTint();
-
     item.icon
       .setVisible(true)
       .setText(rewardIcon(reward))
-      .setFontSize(height > 90 ? 30 : 20);
+      .setFontSize(height > 100 ? 34 : 20);
     item.label
       .setVisible(true)
-      .setFontSize(height > 90 ? 44 : 26)
+      .setFontSize(height > 100 ? 46 : 26)
       .setColor('#ffffff');
 
     this.active.push(item);
+    this.stack.push(item);
     return item;
   }
+
+  /* ------------------------------------------------------------ barriers -- */
 
   private maybeSpawnBarrier(): void {
     const runtime = this.ctx.runtime;
@@ -366,7 +398,7 @@ export class LaneObjectSystem {
     const viewport = this.ctx.viewport;
     const width = viewport.combatLaneWidth * BALANCE.BARRIER_WIDTH_RATIO;
     const hp = Math.max(
-      BALANCE.BARRIER_BASE_HP,
+      BALANCE.BARRIER_MIN_HP,
       Math.round(this.ctx.combat.estimatedDps * BALANCE.BARRIER_DPS_SECONDS),
     );
 
@@ -376,20 +408,19 @@ export class LaneObjectSystem {
     item.width = width;
     item.height = BALANCE.BARRIER_HEIGHT;
     item.x = viewport.combatLaneCenterX;
-    item.y = viewport.visibleTop - 80;
+    item.y = viewport.visibleTop - 90;
+    item.targetY = item.y;
     item.hp = hp;
     item.maxHp = hp;
     item.reward = null;
     item.penalty = clamp(
-      Math.round(
-        this.ctx.rng.range(BALANCE.BARRIER_PENALTY[0], BALANCE.BARRIER_PENALTY[1]),
-      ),
+      Math.round(this.ctx.rng.range(BALANCE.BARRIER_PENALTY[0], BALANCE.BARRIER_PENALTY[1])),
       1,
-      Math.max(1, this.ctx.army.count),
+      99,
     );
     item.flash = 0;
+    item.flashCooldown = 0;
     item.shownHp = -1;
-    item.sequence = this.nextSequence++;
 
     item.sprite
       .setTexture(TEX.barrier)
@@ -398,15 +429,15 @@ export class LaneObjectSystem {
       .setPosition(item.x, item.y)
       .setAlpha(1)
       .clearTint();
-    item.icon.setVisible(true).setText('⚠').setFontSize(22);
-    item.label.setVisible(true).setFontSize(34).setColor('#ffd7d7');
+    item.icon.setVisible(false);
+    item.label.setVisible(true).setFontSize(42).setColor('#ffe4e4');
 
     this.active.push(item);
   }
 
   reset(): void {
     for (let i = this.active.length - 1; i >= 0; i--) this.release(this.active[i]);
-    this.supplyTail = this.ctx.army.frontY - 220;
+    this.stack.length = 0;
     this.nextBarrierAt = BALANCE.BARRIER_FIRST_AT;
     this.started = false;
   }

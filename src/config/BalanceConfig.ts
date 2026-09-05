@@ -63,46 +63,58 @@ export const BALANCE = {
 
   // ------------------------------------------------------------- lanes ---
   /** Seconds before the first supply block enters the lane. */
-  SUPPLY_FIRST_AT: 3,
-  /** Vertical gap between blocks in the supply train. */
-  LANE_BLOCK_GAP: 14,
-  /** Height of a big (reward) block and of a filler block. */
+  SUPPLY_FIRST_AT: 2,
+  /** Vertical gap between blocks in the stack. */
+  LANE_BLOCK_GAP: 10,
   LANE_BIG_BLOCK_HEIGHT: 150,
   LANE_FILLER_BLOCK_HEIGHT: 78,
-  /** Fraction of the lane width a block occupies. */
   LANE_BLOCK_WIDTH_RATIO: 0.88,
-  /** Filler blocks appended behind each reward block. */
+  /** Filler blocks appended behind each weapon block. */
   LANE_FILLER_COUNT: [3, 6] as [number, number],
-  /** Filler blocks are 1 HP - they pop instantly and feel great. */
   LANE_FILLER_HP: 1,
   LANE_FILLER_SOLDIERS: 1,
+
   /**
-   * Big-block HP. Scales with elapsed time *and* army DPS so a supply block
-   * always costs a meaningful slice of attention rather than melting instantly.
+   * The stack does NOT drift. Its front block parks this far above the firing
+   * line and waits indefinitely; the stack only advances when you break one.
+   * The pressure to leave the lane comes from the horde, not from a timer.
    */
+  LANE_STACK_FRONT_OFFSET: 210,
+  /** Blocks slide into their new slot at this rate after one is broken. */
+  LANE_STACK_SLIDE: 9,
+  /** Keep at least this many blocks queued up. */
+  LANE_STACK_MIN: 9,
+
   LANE_BLOCK_BASE_HP: 90,
   LANE_BLOCK_TIME_SCALING: 0.014,
-  /** Share of one second of full army DPS a big block should cost. */
+  /** Share of one second of full army DPS a weapon block should cost. */
   LANE_BLOCK_DPS_SECONDS: 1.15,
-  /** Reward table for big supply blocks. */
+  /**
+   * What is frozen inside a big block. Weighted toward weapons - the "+1"
+   * filler blocks are what hand out single soldiers.
+   */
   LANE_REWARDS: [
-    { id: 'S8', weight: 30, kind: 'SOLDIERS', amount: 8 },
-    { id: 'S15', weight: 22, kind: 'SOLDIERS', amount: 15 },
-    { id: 'S25', weight: 10, kind: 'SOLDIERS', amount: 25 },
-    { id: 'DMG', weight: 16, kind: 'DAMAGE', percent: 8 },
-    { id: 'ROF', weight: 14, kind: 'FIRE_RATE', percent: 6 },
+    { id: 'DMG', weight: 30, kind: 'DAMAGE', percent: 10 },
+    { id: 'ROF', weight: 26, kind: 'FIRE_RATE', percent: 8 },
+    { id: 'DMG_BIG', weight: 12, kind: 'DAMAGE', percent: 18 },
+    { id: 'ROF_BIG', weight: 10, kind: 'FIRE_RATE', percent: 14 },
+    { id: 'S10', weight: 14, kind: 'SOLDIERS', amount: 10 },
     { id: 'X2', weight: 8, kind: 'DOUBLE_POINTS', seconds: 10 },
   ],
 
-  /** Penalty barriers in the combat lane. */
-  BARRIER_FIRST_AT: 34,
-  BARRIER_INTERVAL: [26, 40] as [number, number],
-  BARRIER_HEIGHT: 74,
+  /**
+   * Penalty barriers in the combat lane. The number on the barrier IS the
+   * penalty; shooting it counts that number down toward zero, so partial
+   * suppression always pays off. Whatever is left is what it costs you.
+   */
+  BARRIER_FIRST_AT: 26,
+  BARRIER_INTERVAL: [22, 34] as [number, number],
+  BARRIER_HEIGHT: 84,
   BARRIER_WIDTH_RATIO: 0.92,
-  BARRIER_BASE_HP: 140,
-  BARRIER_DPS_SECONDS: 0.9,
-  /** Soldiers lost when a barrier reaches the line. */
-  BARRIER_PENALTY: [8, 18] as [number, number],
+  BARRIER_PENALTY: [8, 20] as [number, number],
+  /** Total HP of a barrier, expressed in seconds of full army DPS. */
+  BARRIER_DPS_SECONDS: 1.1,
+  BARRIER_MIN_HP: 120,
 
   // -------------------------------------------------------------- combat ---
   /** Soldiers only re-evaluate their target this often (seconds). */
