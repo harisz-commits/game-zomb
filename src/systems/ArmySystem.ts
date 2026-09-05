@@ -23,6 +23,9 @@ export class ArmySystem {
 
   private readonly spritePool: Phaser.GameObjects.Image[] = [];
   private shieldSprite!: Phaser.GameObjects.Image;
+  /** Ground shadow + muzzle light under the block. */
+  private groundShadow!: Phaser.GameObjects.Image;
+  private muzzleLight!: Phaser.GameObjects.Image;
 
   private centerX = 0;
   private targetX = 0;
@@ -60,6 +63,23 @@ export class ArmySystem {
       .setDepth(55)
       .setTint(0x9aa7ff);
     this.ctx.worldLayer.add(this.shieldSprite);
+
+    // One shadow and one light for the whole block rather than 140 of each:
+    // the formation is packed tight enough that per-unit shadows would merge
+    // into the same blob anyway, at 140x the draw cost.
+    this.groundShadow = this.ctx.scene.add
+      .image(this.centerX, ARMY_BASE_Y, TEX.glow)
+      .setDepth(22)
+      .setTint(0x000000)
+      .setAlpha(0.5);
+    this.muzzleLight = this.ctx.scene.add
+      .image(this.centerX, ARMY_BASE_Y, TEX.glow)
+      .setDepth(23)
+      .setTint(0xffb45c)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setAlpha(0);
+    this.ctx.worldLayer.add(this.groundShadow);
+    this.ctx.worldLayer.add(this.muzzleLight);
 
     this.addSoldiers(BALANCE.STARTING_SOLDIERS, true);
     this.layout(true);
@@ -377,11 +397,14 @@ export class ArmySystem {
 
       const sprite = soldier.sprite;
       const eased = soldier.spawnT * soldier.spawnT * (3 - 2 * soldier.spawnT);
-      sprite.x = soldier.x;
+      // Rows further from the camera sit closer to the vanishing point and are
+      // drawn smaller - the back of a 140-strong block visibly recedes.
+      const depth = viewport.depthScale(soldier.y);
+      sprite.x = viewport.projectX(soldier.x, soldier.y);
       // Subtle idle bob keeps the formation alive without extra objects.
       sprite.y = soldier.y + Math.sin(soldier.phase + this.ctx.runtime.elapsed * 4) * 0.8;
       sprite.setAlpha(eased);
-      sprite.setScale(0.55 + eased * 0.45);
+      sprite.setScale((0.55 + eased * 0.45) * depth);
 
       if (soldier.flash > 0) {
         soldier.flash -= dt;
@@ -395,8 +418,39 @@ export class ArmySystem {
 
     if (this.doubleReinforcementTimer > 0) this.doubleReinforcementTimer -= dt;
 
+    this.updateGroundLight();
     this.updateShield(dt);
     this.updateGuardian(dt);
+  }
+
+  /**
+   * Grounds the block: a soft shadow on the deck, plus a warm light that
+   * swells with the volume of fire. Sold entirely by two stretched sprites.
+   */
+  private updateGroundLight(): void {
+    const viewport = this.ctx.viewport;
+    const y = this.frontRowY + 70;
+    const depth = viewport.depthScale(y);
+    const width = Math.max(120, this.formationHalfWidth * 2.5) * depth;
+    const x = viewport.projectX(this.centerX, y);
+
+    if (!this.ctx.quality.settings.groundLight) {
+      this.groundShadow.setAlpha(0);
+      this.muzzleLight.setAlpha(0);
+      return;
+    }
+
+    this.groundShadow
+      .setPosition(x, y)
+      .setDisplaySize(width, width * 0.62)
+      .setAlpha(this.count > 0 ? 0.5 : 0);
+
+    // gunfireRate is shots/second across the whole army.
+    const intensity = clamp(this.ctx.runtime.gunfireRate / 90, 0, 1);
+    this.muzzleLight
+      .setPosition(x, this.frontRowY - 6)
+      .setDisplaySize(width * 1.15, width * 0.7)
+      .setAlpha(intensity * 0.42);
   }
 
   private updateShield(dt: number): void {
@@ -405,7 +459,10 @@ export class ArmySystem {
       const size = Math.max(140, this.formationHalfWidth * 2.6);
       this.shieldSprite
         .setVisible(true)
-        .setPosition(this.centerX, this.frontRowY + 60)
+        .setPosition(
+          this.ctx.viewport.projectX(this.centerX, this.frontRowY + 60),
+          this.frontRowY + 60,
+        )
         .setDisplaySize(size, size * 0.8)
         .setAlpha(0.25 + Math.sin(this.ctx.runtime.elapsed * 12) * 0.08);
     } else if (this.shieldSprite.visible) {
@@ -479,6 +536,10 @@ export class ArmySystem {
         const soldier = this.soldiers[index++];
         if (!soldier) break;
         soldier.row = row;
+        // Rows nearer the camera paint over the ones behind them. Set here
+        // rather than per frame: re-sorting the display list every frame for
+        // a formation that only changes on a roster change is wasted work.
+        soldier.sprite.setDepth(30 + row * 0.01);
         soldier.slotOffsetX = startOffset + col * spacing + stagger;
         soldier.slotX = this.centerX + soldier.slotOffsetX;
         soldier.slotY = rowY;

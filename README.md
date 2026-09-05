@@ -73,7 +73,8 @@ src/
   core/
     EventBus.ts               Typed pub/sub - systems never call each other directly
     BattleContext.ts          Dependency container + per-run RuntimeState
-    Viewport.ts               Virtual field -> any screen size
+    Viewport.ts               Virtual field -> any screen size, plus the
+                              perspective projection every system draws through
     Services.ts               Process-wide SaveSystem instance, run seeds
   scenes/
     BootScene.ts              Texture generation, SDK init, save load
@@ -100,6 +101,7 @@ src/
   data/                       soldierTiers, enemyDefinitions, upgradeDefinitions,
                               doctrineDefinitions, waveDefinitions
   render/                     TextureFactory (placeholder art), Background
+                              (baked perspective bridge + scrolling detail)
   ui/                         BattleHUD, PromotionModal, UpgradeCard, Button,
                               GameOverPanel, DebugOverlay
   utils/                      SeededRandom, ObjectPool, MathUtils
@@ -218,6 +220,49 @@ Campaign timeline and endless modifiers: `src/data/waveDefinitions.ts`.
 
 ## How to extend
 
+### Perspective
+
+The battlefield is drawn as a receding plane. `Viewport` owns the projection
+and it is deliberately a **pure horizontal shear**:
+
+```
+depthScale(y) = (y - HORIZON_Y) / (DEPTH_ANCHOR_Y - HORIZON_Y)   // 1 at the army line
+projectX(x, y) = centerX + (x - centerX) * depthScale(y)
+```
+
+World `y` is never touched, so no speed, range, spawn or timing value in the
+game changes because of it - only where things are *drawn*. Straight lines stay
+straight, so the deck, both railings and the lane divider converge on the same
+vanishing point that sprites are scaled against, and a point can never cross
+the divider under projection (`tests/viewport.test.ts` pins that down).
+
+Because a soldier and its target are projected the same way, a soldier firing
+"straight ahead" draws a converging line - which is what a line running away
+from the camera looks like in perspective.
+
+Depth is sold by four cheap things, in order of how much they buy:
+
+1. **Scale.** Every unit is drawn at `baseScale * depthScale(y)`.
+2. **Haze.** Distant units fade toward a haze tint (`applyHaze`, written in
+   quantised steps so a walking zombie is not re-tinted every frame), and the
+   deck fades into the same colour.
+3. **Contact shadows**, baked into the bottom of every unit sprite rather than
+   drawn as separate objects - 150 fewer quads a frame, and a quality drop can
+   never leave the horde floating.
+4. **Converging scenery**: railing posts and road seams whose spacing shrinks
+   with distance, plus a baked skyline in the wedges either side of the bridge.
+
+`Background` bakes all of the static scene - sky, deck shading, lane washes,
+railings, divider, haze, skyline, vignette - into a **render texture at canvas
+resolution**, redrawn only when the canvas size changes, and draws it as a
+single quad. This matters more than it sounds: Phaser re-tessellates and re-fills
+a Graphics object every frame it is visible, and leaving ~25 screen-sized
+polygons in one cost a third of the frame rate. Only the scrolling detail stays
+live. (The plate is re-created rather than resized on an orientation change -
+a DynamicTexture's render target is built with `autoResize` off, so
+`RenderTexture.resize` moves the reported size while the framebuffer stays put
+and the whole background shears.)
+
 ### Replace the placeholder art
 
 All sprites are generated in `src/render/TextureFactory.ts` under stable texture
@@ -304,10 +349,14 @@ score = kills
 - Entity caps (`ENTITY_LIMITS`): 140 visible soldiers, ~150 zombies, 80 tracers,
   25 damage numbers, 150 particles.
 - `QualityManager` watches smoothed FPS and steps HIGH → MEDIUM → LOW, reducing
-  particles, tracer frequency, shadows, secondary animation and screen shake.
+  particles, tracer frequency, ground lighting, secondary animation and screen
+  shake.
   **It never changes simulation values**, so difficulty is device-independent.
 - Gunfire is aggregated into at most ~14 squad-level pops per second instead of
   one audio voice per shot.
+- The background is one baked quad plus a few dozen small scrolling quads; unit
+  shadows are part of the unit sprites. Measured in a software-rasterised
+  browser at 150 zombies: 17.3 fps before the perspective rebuild, 24.4 after.
 
 ## Tests
 

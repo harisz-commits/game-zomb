@@ -16,6 +16,19 @@ export function damp(from: number, to: number, rate: number, dt: number): number
   return lerp(from, to, 1 - Math.exp(-rate * dt));
 }
 
+/**
+ * Blends two packed 0xRRGGBB colours. Used for distance haze on sprites: the
+ * cheapest way to fake atmospheric perspective is to fade a unit's tint toward
+ * the background instead of drawing a fog plane over it.
+ */
+export function mixColor(from: number, to: number, t: number): number {
+  const f = t < 0 ? 0 : t > 1 ? 1 : t;
+  const r = ((from >> 16) & 0xff) + (((to >> 16) & 0xff) - ((from >> 16) & 0xff)) * f;
+  const g = ((from >> 8) & 0xff) + (((to >> 8) & 0xff) - ((from >> 8) & 0xff)) * f;
+  const b = (from & 0xff) + ((to & 0xff) - (from & 0xff)) * f;
+  return ((r & 0xff) << 16) | ((g & 0xff) << 8) | (b & 0xff);
+}
+
 export function approach(value: number, target: number, maxDelta: number): number {
   if (value < target) return Math.min(value + maxDelta, target);
   return Math.max(value - maxDelta, target);

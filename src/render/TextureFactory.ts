@@ -1,9 +1,5 @@
 import Phaser from 'phaser';
-import { COLORS } from '../config/GameConfig';
 import { SOLDIER_TIERS } from '../data/soldierTiers';
-
-const COLORS_BG_TOP = COLORS.bgTop;
-const COLORS_BG_BOTTOM = COLORS.bgBottom;
 
 /**
  * All placeholder art is generated at runtime with Phaser Graphics.
@@ -19,7 +15,6 @@ const COLORS_BG_BOTTOM = COLORS.bgBottom;
 
 export const TEX = {
   soldier: (visual: number) => `soldier_t${visual}`,
-  shadow: 'fx_shadow',
   tracer: 'fx_tracer',
   spark: 'fx_spark',
   disc: 'fx_disc',
@@ -32,8 +27,7 @@ export const TEX = {
   pixel: 'fx_pixel',
   ice: 'lane_ice',
   barrier: 'lane_barrier',
-  road: 'lane_road',
-  sky: 'lane_sky',
+  glow: 'fx_glow',
 } as const;
 
 function makeTexture(
@@ -53,7 +47,8 @@ function makeTexture(
 /* -------------------------------------------------------------- soldiers -- */
 
 const SOLDIER_W = 26;
-const SOLDIER_H = 34;
+/** Includes the baked-in foot shadow at the bottom - see `drawSoldier`. */
+const SOLDIER_H = 39;
 
 function drawSoldier(
   g: Phaser.GameObjects.Graphics,
@@ -64,6 +59,13 @@ function drawSoldier(
   accent: number,
 ): void {
   const cx = SOLDIER_W / 2;
+
+  // Contact shadow, baked into the sprite. A separate shadow object per
+  // soldier would be 140 extra quads a frame for the same six pixels.
+  g.fillStyle(0x000000, 0.18);
+  g.fillEllipse(cx, 34, 20, 9);
+  g.fillStyle(0x000000, 0.24);
+  g.fillEllipse(cx, 34, 13, 6);
 
   // Legs
   g.fillStyle(0x1b212b, 1);
@@ -126,6 +128,13 @@ function drawSoldier(
       break;
   }
 
+  // Rim light down one side: at 26 px a flat silhouette turns to mush, a
+  // single lit edge is enough to keep the shape readable.
+  g.fillStyle(0xffffff, 0.16);
+  g.fillRect(cx - 6, 13, 2, 12);
+  g.fillStyle(0x000000, 0.22);
+  g.fillRect(cx + 4, 13, 2, 12);
+
   // Weapon - longer and heavier with tier, always pointing up-field
   const barrelLength = 9 + visual * 1.6;
   g.fillStyle(weapon, 1);
@@ -140,7 +149,23 @@ function drawSoldier(
 
 /* --------------------------------------------------------------- zombies -- */
 
+/**
+ * Contact shadow baked into the bottom of a unit sprite.
+ *
+ * Every unit needs one and a separate shadow object would mean up to 150 extra
+ * quads per frame for six pixels of darkening. Baked in, it costs nothing,
+ * scales with the sprite's perspective scale for free, and cannot be switched
+ * off by a quality drop - a floating horde looks broken at any quality.
+ */
+function bakeContactShadow(g: Phaser.GameObjects.Graphics, cx: number, y: number, width: number): void {
+  g.fillStyle(0x000000, 0.16);
+  g.fillEllipse(cx, y, width, width * 0.42);
+  g.fillStyle(0x000000, 0.22);
+  g.fillEllipse(cx, y, width * 0.62, width * 0.26);
+}
+
 function drawWalker(g: Phaser.GameObjects.Graphics): void {
+  bakeContactShadow(g, 15, 33, 24);
   g.fillStyle(0x3d5240, 1);
   g.fillRect(9, 20, 5, 10);
   g.fillRect(16, 20, 5, 10);
@@ -157,6 +182,7 @@ function drawWalker(g: Phaser.GameObjects.Graphics): void {
 }
 
 function drawRunner(g: Phaser.GameObjects.Graphics): void {
+  bakeContactShadow(g, 13, 31, 22);
   g.fillStyle(0x3a4a52, 1);
   g.fillRect(8, 19, 4, 9);
   g.fillRect(15, 21, 4, 7);
@@ -173,6 +199,7 @@ function drawRunner(g: Phaser.GameObjects.Graphics): void {
 }
 
 function drawBrute(g: Phaser.GameObjects.Graphics): void {
+  bakeContactShadow(g, 24, 55, 40);
   g.fillStyle(0x2f4235, 1);
   g.fillRect(14, 38, 9, 14);
   g.fillRect(26, 38, 9, 14);
@@ -190,6 +217,7 @@ function drawBrute(g: Phaser.GameObjects.Graphics): void {
 }
 
 function drawArmored(g: Phaser.GameObjects.Graphics): void {
+  bakeContactShadow(g, 18, 39, 28);
   g.fillStyle(0x333d45, 1);
   g.fillRect(10, 24, 6, 12);
   g.fillRect(20, 24, 6, 12);
@@ -211,6 +239,7 @@ function drawArmored(g: Phaser.GameObjects.Graphics): void {
 }
 
 function drawSwarmer(g: Phaser.GameObjects.Graphics): void {
+  bakeContactShadow(g, 10, 19, 17);
   g.fillStyle(0x5f8054, 1);
   g.fillRect(4, 7, 12, 10);
   g.fillStyle(0x76a066, 1);
@@ -224,6 +253,7 @@ function drawSwarmer(g: Phaser.GameObjects.Graphics): void {
 }
 
 function drawSpitter(g: Phaser.GameObjects.Graphics): void {
+  bakeContactShadow(g, 15, 34, 24);
   g.fillStyle(0x3d5240, 1);
   g.fillRect(9, 22, 5, 9);
   g.fillRect(17, 22, 5, 9);
@@ -241,6 +271,7 @@ function drawSpitter(g: Phaser.GameObjects.Graphics): void {
 }
 
 function drawCrusher(g: Phaser.GameObjects.Graphics): void {
+  bakeContactShadow(g, 51, 116, 78);
   g.fillStyle(0x2b3a2c, 1);
   g.fillRect(28, 86, 18, 26);
   g.fillRect(56, 86, 18, 26);
@@ -261,6 +292,7 @@ function drawCrusher(g: Phaser.GameObjects.Graphics): void {
 }
 
 function drawAbomination(g: Phaser.GameObjects.Graphics): void {
+  bakeContactShadow(g, 46, 100, 70);
   g.fillStyle(0x2f3f38, 1);
   g.fillRect(26, 74, 14, 22);
   g.fillRect(52, 74, 14, 22);
@@ -331,34 +363,18 @@ function drawBarrier(g: Phaser.GameObjects.Graphics): void {
   g.strokeRect(2, 2, 124, 60);
 }
 
-/** Asphalt tile for the scrolling bridge deck. */
-function drawRoad(g: Phaser.GameObjects.Graphics): void {
-  g.fillStyle(0x2c3442, 1);
-  g.fillRect(0, 0, 128, 128);
-  g.fillStyle(0x2f3846, 1);
-  g.fillRect(0, 0, 128, 62);
-  g.fillStyle(0x333c4c, 0.7);
-  g.fillRect(0, 96, 128, 22);
-  // A single soft seam - enough to read as movement, not a ladder.
-  g.fillStyle(0x232b37, 0.55);
-  g.fillRect(0, 125, 128, 3);
-}
 
-/**
- * Vertical sky gradient, baked once. Drawing this as banded fills every frame
- * is pure overdraw, which is exactly what fill-rate-bound mobile GPUs hate.
- */
-function drawSky(g: Phaser.GameObjects.Graphics): void {
-  const bands = 32;
-  const top = Phaser.Display.Color.IntegerToColor(COLORS_BG_TOP);
-  const bottom = Phaser.Display.Color.IntegerToColor(COLORS_BG_BOTTOM);
-  for (let i = 0; i < bands; i++) {
-    const t = i / (bands - 1);
-    const c = Phaser.Display.Color.Interpolate.ColorWithColor(top, bottom, 1, t);
-    g.fillStyle(Phaser.Display.Color.GetColor(c.r, c.g, c.b), 1);
-    g.fillRect(0, (128 / bands) * i, 8, 128 / bands + 1);
+
+/** Soft radial light, used for muzzle glow and the lit apron under the army. */
+function drawGlow(g: Phaser.GameObjects.Graphics): void {
+  const steps = 14;
+  for (let i = steps; i >= 1; i--) {
+    const t = i / steps;
+    g.fillStyle(0xffffff, 0.055 * (1 - t) + 0.012);
+    g.fillCircle(64, 64, 62 * t);
   }
 }
+
 
 /** Generates every placeholder texture. Called once from BootScene. */
 export function generateTextures(scene: Phaser.Scene): void {
@@ -369,23 +385,19 @@ export function generateTextures(scene: Phaser.Scene): void {
     );
   }
 
-  makeTexture(scene, 'zombie_walker', 30, 30, drawWalker);
-  makeTexture(scene, 'zombie_runner', 27, 28, drawRunner);
-  makeTexture(scene, 'zombie_brute', 48, 52, drawBrute);
-  makeTexture(scene, 'zombie_armored', 36, 36, drawArmored);
-  makeTexture(scene, 'zombie_swarmer', 20, 17, drawSwarmer);
-  makeTexture(scene, 'zombie_spitter', 31, 31, drawSpitter);
-  makeTexture(scene, 'boss_crusher', 102, 112, drawCrusher);
-  makeTexture(scene, 'boss_abomination', 92, 96, drawAbomination);
+  // Heights include the baked contact shadow at the bottom of each sprite.
+  makeTexture(scene, 'zombie_walker', 30, 38, drawWalker);
+  makeTexture(scene, 'zombie_runner', 27, 36, drawRunner);
+  makeTexture(scene, 'zombie_brute', 48, 62, drawBrute);
+  makeTexture(scene, 'zombie_armored', 36, 44, drawArmored);
+  makeTexture(scene, 'zombie_swarmer', 20, 24, drawSwarmer);
+  makeTexture(scene, 'zombie_spitter', 31, 39, drawSpitter);
+  makeTexture(scene, 'boss_crusher', 102, 124, drawCrusher);
+  makeTexture(scene, 'boss_abomination', 92, 108, drawAbomination);
 
   makeTexture(scene, TEX.pixel, 4, 4, (g) => {
     g.fillStyle(0xffffff, 1);
     g.fillRect(0, 0, 4, 4);
-  });
-
-  makeTexture(scene, TEX.shadow, 32, 14, (g) => {
-    g.fillStyle(0x000000, 0.28);
-    g.fillEllipse(16, 7, 30, 12);
   });
 
   makeTexture(scene, TEX.tracer, 3, 22, (g) => {
@@ -444,10 +456,9 @@ export function generateTextures(scene: Phaser.Scene): void {
     g.strokeCircle(64, 64, 54);
   });
 
-  makeTexture(scene, TEX.sky, 8, 128, drawSky);
   makeTexture(scene, TEX.ice, 128, 128, drawIce);
   makeTexture(scene, TEX.barrier, 128, 64, drawBarrier);
-  makeTexture(scene, TEX.road, 128, 128, drawRoad);
+  makeTexture(scene, TEX.glow, 128, 128, drawGlow);
 
   makeTexture(scene, TEX.star, 20, 20, (g) => {
     g.fillStyle(0xffffff, 1);

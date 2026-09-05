@@ -53,6 +53,35 @@ export const WORLD_SCROLL_SPEED = 110;
  */
 export const ARMY_BASE_Y = FIELD_H - 250;
 
+/* ------------------------------------------------------------ perspective --
+ * The battlefield is drawn as a receding plane.
+ *
+ * The projection is a pure horizontal shear: world y is left untouched (so no
+ * speed, range or timing value in the game has to change) while world x is
+ * pulled toward a vanishing point that sits far above the field. Straight
+ * lines stay straight, so the lanes, railings and divider all converge, and
+ * sprites shrink with distance.
+ *
+ * Because both a soldier and its target are projected the same way, a soldier
+ * firing "straight ahead" traces a converging line - which is exactly what a
+ * line running away from the camera looks like in perspective.
+ */
+
+/** World y of the vanishing point. Far off-screen: a visible horizon would
+ *  squeeze the spawn area into a few unreadable pixels. */
+export const HORIZON_Y = -1260;
+
+/** The row that renders at scale 1 - the army's front line. */
+export const DEPTH_ANCHOR_Y = ARMY_BASE_Y;
+
+/** Floor on the depth scale so distant enemies stay readable on small phones. */
+export const MIN_DEPTH_SCALE = 0.36;
+
+/** Distance above the army where the haze starts eating contrast. */
+export const FOG_START_Y = 260;
+/** Strongest haze alpha, reached at the top of the field. */
+export const FOG_MAX = 0.72;
+
 export const ENTITY_LIMITS = {
   maxVisibleSoldiers: 140,
   maxActiveZombies: 150,
@@ -71,7 +100,8 @@ export interface QualitySettings {
   particleScale: number;
   shakeScale: number;
   damageNumbers: boolean;
-  shadows: boolean;
+  /** Ground shadow + muzzle light under the formation. */
+  groundLight: boolean;
   /** Secondary zombie animation (bobbing) on/off. */
   enemyBob: boolean;
 }
@@ -82,7 +112,7 @@ export const QUALITY_PRESETS: Record<QualityLevel, QualitySettings> = {
     particleScale: 1,
     shakeScale: 1,
     damageNumbers: true,
-    shadows: true,
+    groundLight: true,
     enemyBob: true,
   },
   MEDIUM: {
@@ -90,7 +120,7 @@ export const QUALITY_PRESETS: Record<QualityLevel, QualitySettings> = {
     particleScale: 0.6,
     shakeScale: 0.75,
     damageNumbers: true,
-    shadows: false,
+    groundLight: true,
     enemyBob: true,
   },
   LOW: {
@@ -98,7 +128,7 @@ export const QUALITY_PRESETS: Record<QualityLevel, QualitySettings> = {
     particleScale: 0.3,
     shakeScale: 0.5,
     damageNumbers: false,
-    shadows: false,
+    groundLight: false,
     enemyBob: false,
   },
 };

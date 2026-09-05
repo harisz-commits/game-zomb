@@ -7,7 +7,7 @@ import { Zombie } from '../entities/Zombie';
 import { BOSS_BEHAVIOUR, ENEMY_DEFINITIONS } from '../data/enemyDefinitions';
 import { TEX } from '../render/TextureFactory';
 import type { EnemyKind } from '../types/game';
-import { clamp } from '../utils/MathUtils';
+import { clamp, mixColor } from '../utils/MathUtils';
 import { ObjectPool } from '../utils/ObjectPool';
 import { audio } from './AudioSystem';
 
@@ -31,6 +31,10 @@ export interface DamageOptions {
 const ELITE_TINT = 0xff7ad1;
 const FLASH_DURATION = 0.05;
 const FLASH_COOLDOWN = 0.17;
+/** Colour distant units fade toward. Warmer than the sky so they stay legible. */
+const HAZE_TINT = 0x3b4759;
+/** Haze is written in steps so a walking zombie is not re-tinted every frame. */
+const HAZE_STEPS = 10;
 
 /**
  * Spawns, moves, and kills enemies.
@@ -58,7 +62,6 @@ export class EnemySystem {
       (z) => {
         z.active = false;
         z.sprite.setVisible(false);
-        z.shadow.setVisible(false);
       },
       ENTITY_LIMITS.maxActiveZombies,
       40,
@@ -83,12 +86,12 @@ export class EnemySystem {
 
   private createZombie(): Zombie {
     const zombie = new Zombie();
-    zombie.shadow = this.ctx.scene.add.image(0, 0, TEX.shadow).setVisible(false).setDepth(24);
+    // Contact shadows are baked into the sprites (see TextureFactory), so a
+    // zombie is a single quad no matter what the quality level is.
     zombie.sprite = this.ctx.scene.add
       .image(0, 0, 'zombie_walker')
       .setVisible(false)
       .setDepth(25);
-    this.ctx.worldLayer.add(zombie.shadow);
     this.ctx.worldLayer.add(zombie.sprite);
     return zombie;
   }
@@ -150,22 +153,18 @@ export class EnemySystem {
     zombie.abilityTimer = zombie.boss ? 3 : 0;
     zombie.phaseIndex = 0;
 
-    const scale = zombie.elite ? BALANCE.ELITE_SCALE : 1;
+    zombie.baseScale = zombie.elite ? BALANCE.ELITE_SCALE : 1;
+    zombie.fogStep = -1;
+
+    const depth = viewport.depthScale(zombie.y);
     zombie.sprite
       .setTexture(def.texture)
       .setVisible(true)
-      .setPosition(zombie.x, zombie.y)
-      .setScale(scale)
+      .setPosition(viewport.projectX(zombie.x, zombie.y), zombie.y)
+      .setScale(zombie.baseScale * depth)
       .setAlpha(1);
 
-    if (zombie.elite) zombie.sprite.setTint(ELITE_TINT);
-    else zombie.sprite.clearTint();
-
-    zombie.shadow
-      .setVisible(this.ctx.quality.settings.shadows)
-      .setPosition(zombie.x, zombie.y + zombie.radius * 0.85)
-      .setDisplaySize(zombie.radius * 2, zombie.radius * 0.75)
-      .setAlpha(0.3);
+    this.applyHaze(zombie, true);
 
     this.active.push(zombie);
     return zombie;
@@ -271,10 +270,10 @@ export class EnemySystem {
     this.updateSpawning(dt);
 
     const army = this.ctx.army;
+    const viewport = this.ctx.viewport;
     const frontY = army.frontY;
-    const laneCentre = this.ctx.viewport.combatLaneCenterX;
+    const laneCentre = viewport.combatLaneCenterX;
     const bob = this.ctx.quality.settings.enemyBob;
-    const showShadows = this.ctx.quality.settings.shadows;
 
     this.rebuildBuckets();
 
@@ -317,25 +316,20 @@ export class EnemySystem {
       if (z.boss) this.updateBoss(z, dt);
 
       const sprite = z.sprite;
-      sprite.x = z.x;
+      const depth = viewport.depthScale(z.y);
+      const projectedX = viewport.projectX(z.x, z.y);
+      sprite.x = projectedX;
       sprite.y = bob ? z.y + Math.sin(z.bobPhase + this.ctx.runtime.elapsed * 7) * 1.5 : z.y;
+      sprite.setScale(z.baseScale * depth);
 
       if (z.flashCooldown > 0) z.flashCooldown -= dt;
       if (z.flash > 0) {
         z.flash -= dt;
-        if (z.flash <= 0) {
-          if (z.elite) sprite.setTint(ELITE_TINT);
-          else sprite.clearTint();
-        }
+        if (z.flash <= 0) this.applyHaze(z, true);
+      } else {
+        this.applyHaze(z, false);
       }
 
-      if (showShadows) {
-        z.shadow.setVisible(true);
-        z.shadow.x = z.x;
-        z.shadow.y = z.y + z.radius * 0.85;
-      } else if (z.shadow.visible) {
-        z.shadow.setVisible(false);
-      }
 
       // Cull anything that somehow slipped past the line.
       if (z.y > frontY + 320) this.release(i);
@@ -372,7 +366,10 @@ export class EnemySystem {
     spit.vx = (dx / length) * BALANCE.SPIT_SPEED;
     spit.vy = (dy / length) * BALANCE.SPIT_SPEED;
     spit.damage = z.damage * BALANCE.SPIT_DAMAGE_RATIO;
-    spit.sprite.setVisible(true).setPosition(z.x, z.y).setScale(1);
+    spit.sprite
+      .setVisible(true)
+      .setPosition(this.ctx.viewport.projectX(z.x, z.y), z.y)
+      .setScale(this.ctx.viewport.depthScale(z.y));
     this.activeSpits.push(spit);
   }
 
@@ -382,7 +379,9 @@ export class EnemySystem {
       const spit = this.activeSpits[i];
       spit.x += spit.vx * dt;
       spit.y += spit.vy * dt;
-      spit.sprite.setPosition(spit.x, spit.y);
+      spit.sprite
+        .setPosition(this.ctx.viewport.projectX(spit.x, spit.y), spit.y)
+        .setScale(this.ctx.viewport.depthScale(spit.y));
 
       if (spit.y >= frontY) {
         this.ctx.army.damageAt(spit.x, spit.damage);
@@ -438,6 +437,22 @@ export class EnemySystem {
         }
       }
     }
+  }
+
+  /**
+   * Atmospheric perspective. Distant units fade toward the haze colour, which
+   * is what makes a shrunken sprite read as "far away" rather than "small".
+   *
+   * Written in quantised steps: a per-frame tint write for 150 units is a lot
+   * of churn for a value that changes slowly.
+   */
+  private applyHaze(z: Zombie, force: boolean): void {
+    const fog = this.ctx.viewport.fogAlpha(z.y);
+    const step = Math.round(fog * HAZE_STEPS);
+    if (!force && step === z.fogStep) return;
+    z.fogStep = step;
+    const base = z.elite ? ELITE_TINT : 0xffffff;
+    z.sprite.setTint(mixColor(base, HAZE_TINT, step / HAZE_STEPS));
   }
 
   /* --------------------------------------------------------------- query -- */

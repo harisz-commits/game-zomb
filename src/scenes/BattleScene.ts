@@ -104,7 +104,7 @@ export class BattleScene extends Phaser.Scene {
       onPhase: (phase) => this.onPhaseChanged(phase),
       onModifier: (label) => events.emit(GameEvent.ENDLESS_MODIFIER, { label }),
     });
-    ctx.effects = new EffectsSystem(this, worldLayer, quality, this.cameras.main);
+    ctx.effects = new EffectsSystem(this, worldLayer, viewport, quality, this.cameras.main);
     ctx.army = new ArmySystem(ctx);
     ctx.enemies = new EnemySystem(ctx);
     ctx.combat = new CombatSystem(ctx);
@@ -113,6 +113,7 @@ export class BattleScene extends Phaser.Scene {
 
     this.background = new Background(this, worldLayer);
     this.background.redraw(viewport);
+
 
     ctx.army.create();
     ctx.director.start(this.mode);
@@ -470,6 +471,7 @@ export class BattleScene extends Phaser.Scene {
     this.uiCamera.setScroll(0, 0);
 
     this.background.redraw(this.ctx.viewport);
+    this.lanes.resize();
     this.hud.resize(width, height);
     this.modal.resize(width, height);
     this.debug?.resize(width, height);
@@ -480,6 +482,7 @@ export class BattleScene extends Phaser.Scene {
     for (const off of this.unsubscribe) off();
     this.unsubscribe = [];
     this.inputSystem?.destroy();
+    this.background?.destroy();
     this.modal?.destroy();
     this.ctx?.effects.destroy();
     this.ctx?.events.clear();

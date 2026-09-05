@@ -58,6 +58,8 @@ export class LaneObject {
   shownHp = -1;
   /** Slot the crate eases toward after the stack advances. */
   targetY = 0;
+  /** Quantised distance haze; -1 forces the next tint write. */
+  fogStep = -1;
 
   get top(): number {
     return this.y - this.height / 2;

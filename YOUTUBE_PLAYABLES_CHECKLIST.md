@@ -156,7 +156,7 @@ Run `npm run build && npm run size`.
 - [x] **No physics bodies** for soldiers or zombies - pure arithmetic.
 - [x] **Everything transient is pooled** (tracers, particles, damage numbers,
   explosions, zombies, spits, soldier sprites).
-- [x] **Adaptive quality** degrades particles / tracers / shadows / shake only;
+- [x] **Adaptive quality** degrades particles / tracers / ground light / shake only;
   simulation values are never touched, so difficulty is device-independent.
 - [x] **Stress verified**: 146 active zombies + 99 soldiers held ~42-47 fps under
   **software rendering** (swiftshader) in the smoke test - hardware GPUs have far

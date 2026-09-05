@@ -1,5 +1,14 @@
-import Phaser from 'phaser';
-import { FIELD_H, FIELD_W, SUPPLY_LANE_RATIO } from '../config/GameConfig';
+import type Phaser from 'phaser';
+import {
+  DEPTH_ANCHOR_Y,
+  FIELD_H,
+  FIELD_W,
+  FOG_MAX,
+  FOG_START_Y,
+  HORIZON_Y,
+  MIN_DEPTH_SCALE,
+  SUPPLY_LANE_RATIO,
+} from '../config/GameConfig';
 import { clamp } from '../utils/MathUtils';
 
 const MAX_ZOOM = 1.35;
@@ -114,5 +123,46 @@ export class Viewport {
   /** Y just above the visible area - used for spawning without pop-in. */
   get spawnY(): number {
     return this.visibleTop - 60;
+  }
+
+  /* ---------------------------------------------------------- perspective -- */
+
+  /**
+   * How large a thing standing on world row `y` is drawn.
+   *
+   * 1 at the army's front line, shrinking toward the vanishing point. The
+   * rows *behind* the front line (the back of the formation) come out above 1,
+   * which is correct: they are the closest thing to the camera.
+   */
+  depthScale(y: number): number {
+    const scale = (y - HORIZON_Y) / (DEPTH_ANCHOR_Y - HORIZON_Y);
+    return scale < MIN_DEPTH_SCALE ? MIN_DEPTH_SCALE : scale;
+  }
+
+  /**
+   * Screen x for a world point. World y is deliberately left alone - see the
+   * perspective note in GameConfig.
+   */
+  projectX(x: number, y: number): number {
+    return this.centerX + (x - this.centerX) * this.depthScale(y);
+  }
+
+  /** Inverse of `projectX` on a given row. */
+  unprojectX(screenX: number, y: number): number {
+    return this.centerX + (screenX - this.centerX) / this.depthScale(y);
+  }
+
+  /**
+   * Distance haze. Everything far up the bridge fades into the background,
+   * which is what stops the shrunken sprites from reading as "small" rather
+   * than "far away".
+   */
+  fogAlpha(y: number): number {
+    const start = DEPTH_ANCHOR_Y - FOG_START_Y;
+    if (y >= start) return 0;
+    const span = start - this.visibleTop + 220;
+    const t = (start - y) / (span > 1 ? span : 1);
+    const eased = t * t;
+    return eased > 1 ? FOG_MAX : eased * FOG_MAX;
   }
 }

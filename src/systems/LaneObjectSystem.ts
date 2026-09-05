@@ -4,7 +4,7 @@ import type { BattleContext } from '../core/BattleContext';
 import { GameEvent } from '../core/EventBus';
 import { LaneObject, type Lane, type LaneReward } from '../entities/LaneObject';
 import { TEX } from '../render/TextureFactory';
-import { clamp, damp } from '../utils/MathUtils';
+import { clamp, damp, formatCompact, mixColor } from '../utils/MathUtils';
 import { ObjectPool } from '../utils/ObjectPool';
 import { audio } from './AudioSystem';
 
@@ -13,6 +13,9 @@ const FLASH_DURATION = 0.05;
 // Without a cooldown the crate under sustained fire re-arms its flash every
 // frame and renders as a solid white block instead of ice.
 const FLASH_COOLDOWN = 0.16;
+/** Matches the haze the horde fades into, so both lanes recede together. */
+const HAZE_TINT = 0x3b4759;
+const HAZE_STEPS = 10;
 
 /**
  * The two things on the bridge that have to be shot open.
@@ -191,6 +194,7 @@ export class LaneObjectSystem {
     this.maybeSpawnBarrier();
 
     const frontLine = this.ctx.army.frontY;
+    const viewport = this.ctx.viewport;
     const drift = WORLD_SCROLL_SPEED * dt;
 
     for (let i = this.active.length - 1; i >= 0; i--) {
@@ -207,19 +211,27 @@ export class LaneObjectSystem {
       if (item.flashCooldown > 0) item.flashCooldown -= dt;
       if (item.flash > 0) {
         item.flash -= dt;
-        if (item.flash <= 0) item.sprite.clearTint();
+        if (item.flash <= 0) this.applyHaze(item, true);
+      } else {
+        this.applyHaze(item, false);
       }
 
-      item.sprite.setPosition(item.x, item.y);
-      item.icon.setPosition(item.x, item.y - item.height * 0.28);
-      item.label.setPosition(item.x, item.y + item.height * 0.1);
+      // Both lanes converge on the same vanishing point as the units, so a
+      // crate keeps filling its lane no matter how far up the bridge it sits.
+      const depth = viewport.depthScale(item.y);
+      const px = viewport.projectX(item.x, item.y);
+      item.sprite.setPosition(px, item.y).setDisplaySize(item.width * depth, item.height);
+      item.icon.setPosition(px, item.y - item.height * 0.28).setScale(depth);
+      item.label.setPosition(px, item.y + item.height * 0.1).setScale(depth);
 
       // Re-rasterising a Text object is expensive: only write when it changes.
       const shown =
         item.kind === 'ICE' ? Math.max(0, Math.ceil(item.hp)) : this.remainingPenalty(item);
       if (shown !== item.shownHp) {
         item.shownHp = shown;
-        item.label.setText(item.kind === 'ICE' ? String(shown) : `-${shown}`);
+        // Late-run crates run to five digits; compact form keeps the number
+        // inside the crate instead of spilling across both lanes.
+        item.label.setText(item.kind === 'ICE' ? formatCompact(shown) : `-${shown}`);
         if (item.kind === 'BARRIER' && shown === 0) {
           item.label.setColor('#7fd4a2');
           item.sprite.setAlpha(0.45);
@@ -233,6 +245,14 @@ export class LaneObjectSystem {
       // Only barriers ever reach the line; the stack never does.
       if (item.lane === 'COMBAT' && item.top > frontLine) this.resolveBarrier(item);
     }
+  }
+
+  /** Distance haze, matching the horde's (see EnemySystem.applyHaze). */
+  private applyHaze(item: LaneObject, force: boolean): void {
+    const step = Math.round(this.ctx.viewport.fogAlpha(item.y) * HAZE_STEPS);
+    if (!force && step === item.fogStep) return;
+    item.fogStep = step;
+    item.sprite.setTint(mixColor(0xffffff, HAZE_TINT, step / HAZE_STEPS));
   }
 
   /** Soldiers this barrier still costs. Counts down as you shoot it. */
@@ -355,6 +375,7 @@ export class LaneObjectSystem {
     item.flash = 0;
     item.flashCooldown = 0;
     item.shownHp = -1;
+    item.fogStep = -1;
 
     // Enter from above the last crate so it slides in rather than popping.
     const last = this.stack[this.stack.length - 1];
@@ -421,6 +442,7 @@ export class LaneObjectSystem {
     item.flash = 0;
     item.flashCooldown = 0;
     item.shownHp = -1;
+    item.fogStep = -1;
 
     item.sprite
       .setTexture(TEX.barrier)
@@ -433,6 +455,28 @@ export class LaneObjectSystem {
     item.label.setVisible(true).setFontSize(42).setColor('#ffe4e4');
 
     this.active.push(item);
+  }
+
+  /**
+   * Re-fits everything on the bridge to the new lane geometry.
+   *
+   * Width and lane centre are captured when an object spawns, so without this
+   * a crate spawned in portrait keeps its portrait width after the player
+   * turns the phone and overhangs the divider.
+   */
+  resize(): void {
+    const viewport = this.ctx.viewport;
+    for (const item of this.active) {
+      if (item.lane === 'SUPPLY') {
+        item.x = viewport.supplyLaneCenterX;
+        item.width = viewport.supplyLaneWidth * BALANCE.LANE_BLOCK_WIDTH_RATIO;
+      } else {
+        item.x = viewport.combatLaneCenterX;
+        item.width = viewport.combatLaneWidth * BALANCE.BARRIER_WIDTH_RATIO;
+      }
+      item.sprite.setDisplaySize(item.width * viewport.depthScale(item.y), item.height);
+    }
+    this.relayoutStack();
   }
 
   reset(): void {

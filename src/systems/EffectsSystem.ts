@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { BALANCE } from '../config/BalanceConfig';
 import { ENTITY_LIMITS, FONT_FAMILY } from '../config/GameConfig';
+import type { Viewport } from '../core/Viewport';
 import { TEX } from '../render/TextureFactory';
 import { ObjectPool } from '../utils/ObjectPool';
 import type { QualityManager } from './QualityManager';
@@ -45,6 +46,10 @@ interface Zone {
 /**
  * All transient visuals live here, every one of them pooled.
  *
+ * Emitters take *world* coordinates and project them once, at emission. After
+ * that a particle simply drifts in screen space, which is both cheaper and
+ * correct: a spark thrown off a distant enemy should stay the size it was born.
+ *
  * Quality level only scales *how many* effects are emitted - never gameplay.
  */
 export class EffectsSystem {
@@ -66,6 +71,7 @@ export class EffectsSystem {
   constructor(
     scene: Phaser.Scene,
     layer: Phaser.GameObjects.Layer,
+    private readonly viewport: Viewport,
     private readonly quality: QualityManager,
     private readonly camera: Phaser.Cameras.Scene2D.Camera,
   ) {
@@ -145,15 +151,19 @@ export class EffectsSystem {
   tracer(x1: number, y1: number, x2: number, y2: number, color: number, width = 1): void {
     const item = this.tracers.obtain();
     if (!item) return;
-    const dx = x2 - x1;
+    // Both ends are projected, so a shot fired "straight ahead" from the edge
+    // of the field draws the converging line perspective demands.
+    const px1 = this.viewport.projectX(x1, y1);
+    const px2 = this.viewport.projectX(x2, y2);
+    const dx = px2 - px1;
     const dy = y2 - y1;
     const length = Math.max(8, Math.sqrt(dx * dx + dy * dy));
 
     item.sprite
       .setVisible(true)
-      .setPosition((x1 + x2) / 2, (y1 + y2) / 2)
+      .setPosition((px1 + px2) / 2, (y1 + y2) / 2)
       .setRotation(Math.atan2(dy, dx) - Math.PI / 2)
-      .setDisplaySize(3 * width, length)
+      .setDisplaySize(3 * width * this.viewport.depthScale(y2), length)
       .setTint(color)
       .setAlpha(0.9);
     item.life = 0;
@@ -169,10 +179,10 @@ export class EffectsSystem {
     item.sprite
       .setVisible(true)
       .setTexture(TEX.muzzle)
-      .setPosition(x, y)
+      .setPosition(this.viewport.projectX(x, y), y)
       .setTint(color)
       .setAlpha(0.9)
-      .setScale(0.7)
+      .setScale(0.7 * this.viewport.depthScale(y))
       .setRotation(Math.random() * Math.PI);
     item.vx = 0;
     item.vy = -40;
@@ -186,18 +196,20 @@ export class EffectsSystem {
   impact(x: number, y: number, color: number, amount = 3): void {
     const q = this.quality.settings;
     const count = Math.max(1, Math.round(amount * q.particleScale));
+    const depth = this.viewport.depthScale(y);
+    const px = this.viewport.projectX(x, y);
     for (let i = 0; i < count; i++) {
       const item = this.particles.obtain();
       if (!item) return;
       const angle = Math.random() * Math.PI * 2;
-      const speed = 60 + Math.random() * 120;
+      const speed = (60 + Math.random() * 120) * depth;
       item.sprite
         .setVisible(true)
         .setTexture(TEX.spark)
-        .setPosition(x, y)
+        .setPosition(px, y)
         .setTint(color)
         .setAlpha(1)
-        .setScale(0.6 + Math.random() * 0.5)
+        .setScale((0.6 + Math.random() * 0.5) * depth)
         .setRotation(angle);
       item.vx = Math.cos(angle) * speed;
       item.vy = Math.sin(angle) * speed;
@@ -211,22 +223,25 @@ export class EffectsSystem {
 
   explosion(x: number, y: number, radius: number, color = 0xffb648): void {
     const item = this.blasts.obtain();
+    const depth = this.viewport.depthScale(y);
+    const px = this.viewport.projectX(x, y);
+    const drawn = radius * depth;
     if (item) {
       item.sprite
         .setVisible(true)
-        .setPosition(x, y)
+        .setPosition(px, y)
         .setTint(color)
         .setAlpha(0.85)
-        .setDisplaySize(radius * 1.6, radius * 1.6);
+        .setDisplaySize(drawn * 1.6, drawn * 1.6);
       item.ring
         .setVisible(true)
-        .setPosition(x, y)
+        .setPosition(px, y)
         .setTint(color)
         .setAlpha(0.9)
-        .setDisplaySize(radius * 0.7, radius * 0.7);
+        .setDisplaySize(drawn * 0.7, drawn * 0.7);
       item.life = 0;
       item.maxLife = 0.34;
-      item.radius = radius;
+      item.radius = drawn;
       this.activeBlasts.push(item);
     }
     this.impact(x, y, color, 6);
@@ -237,12 +252,13 @@ export class EffectsSystem {
   zone(x: number, y: number, radius: number, duration: number, color = 0xff7a3c): void {
     const item = this.zones.obtain();
     if (!item) return;
+    const depth = this.viewport.depthScale(y);
     item.sprite
       .setVisible(true)
-      .setPosition(x, y)
+      .setPosition(this.viewport.projectX(x, y), y)
       .setTint(color)
       .setAlpha(0.32)
-      .setDisplaySize(radius * 2, radius * 2);
+      .setDisplaySize(radius * 2 * depth, radius * 2 * depth * 0.8);
     item.life = 0;
     item.maxLife = duration;
     item.pulse = 0;
@@ -253,14 +269,17 @@ export class EffectsSystem {
     if (!this.quality.settings.damageNumbers) return;
     const item = this.numbers.obtain();
     if (!item) return;
+    // Text only follows the perspective part of the way: a damage number that
+    // shrank as hard as the sprite it belongs to would be unreadable up-field.
+    const readable = 0.72 + 0.28 * this.viewport.depthScale(y);
     item.text
       .setVisible(true)
-      .setPosition(x, y)
+      .setPosition(this.viewport.projectX(x, y), y)
       .setText(String(Math.max(1, Math.round(amount))))
       .setColor(crit ? '#ffd166' : '#ffffff')
       .setFontSize(crit ? 26 : 19)
       .setAlpha(1)
-      .setScale(crit ? 1.1 : 1);
+      .setScale((crit ? 1.1 : 1) * readable);
     item.life = 0;
     item.vy = crit ? -95 : -70;
     this.activeNumbers.push(item);
@@ -272,12 +291,12 @@ export class EffectsSystem {
     if (!item) return;
     item.text
       .setVisible(true)
-      .setPosition(x, y)
+      .setPosition(this.viewport.projectX(x, y), y)
       .setText(label)
       .setColor(color)
       .setFontSize(size)
       .setAlpha(1)
-      .setScale(1);
+      .setScale(0.78 + 0.22 * this.viewport.depthScale(y));
     item.life = 0;
     item.vy = -34;
     this.activeNumbers.push(item);

@@ -7,7 +7,6 @@ import type { EnemyDefinition, EnemyKind } from '../types/game';
  */
 export class Zombie {
   sprite!: Phaser.GameObjects.Image;
-  shadow!: Phaser.GameObjects.Image;
 
   def!: EnemyDefinition;
   kind: EnemyKind = 'WALKER';
@@ -39,6 +38,11 @@ export class Zombie {
   /** Blocks re-arming the flash so sustained fire pulses instead of sticking. */
   flashCooldown = 0;
   bobPhase = 0;
+
+  /** Sprite scale before perspective (elite units are bulkier). */
+  baseScale = 1;
+  /** Quantised haze level; -1 forces the next tint write. */
+  fogStep = -1;
 
   /** Burning (napalm) state. */
   burnTimer = 0;
