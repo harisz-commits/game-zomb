@@ -52,13 +52,14 @@ Debug hotkeys: `P` force promotion, `B` spawn boss, `Z` +20 zombies,
 
 ## Tech stack
 
-Phaser 3 · TypeScript · Vite · npm. WebGL with automatic Canvas fallback
-(`Phaser.AUTO`). No React wrapper, no server, no backend, no database, no
+three.js · TypeScript · Vite · npm. One WebGL renderer, one
+`requestAnimationFrame` loop, and DOM for everything that is text - there is no
+engine underneath. No React wrapper, no server, no backend, no database, no
 external APIs, and **no CDN dependencies in the production bundle** other than
 the official YouTube Playables SDK, which the platform requires.
 
-All artwork is generated at runtime from Phaser `Graphics` and all audio is
-synthesised with the Web Audio API, so the bundle ships **zero asset files**.
+All geometry is built at runtime out of boxes and all audio is synthesised with
+the Web Audio API, so the bundle ships **zero asset files**.
 
 ---
 
@@ -66,7 +67,9 @@ synthesised with the Web Audio API, so the bundle ships **zero asset files**.
 
 ```
 src/
-  main.ts                     Phaser game config + global error reporting
+  main.ts                     Bootstrap + global error reporting
+  game/                       App shell (canvas, loop, screens) and BattleRun
+  render3d/                   Stage, models, instanced actors, bridge, view
   config/
     GameConfig.ts             Technical/presentation config, entity limits, palette
     BalanceConfig.ts          EVERY gameplay number (no magic numbers elsewhere)
@@ -116,7 +119,9 @@ tests/                        Vitest unit tests
   `src/systems`, tuning lives in `src/config` and `src/data`.
 - **Systems are decoupled through the event bus** (`ENEMY_KILLED`,
   `SOLDIER_DIED`, `PROMOTION_READY`, `DOCTRINE_UNLOCKED`, `BOSS_SPAWNED`, ...).
-- **Every pure-logic system is Phaser-free** so the unit tests run in plain node.
+- **Every system is renderer-free.** They own positions, HP and timers; the
+  view reads those once a frame. That is why the move from sprites to 3D
+  touched no gameplay code, and why the unit tests run in plain node.
 - **Nothing allocates per frame.** Transient entities come from `ObjectPool`.
 
 ---
@@ -143,7 +148,7 @@ gracefully and nothing crashes:
 | Language | `navigator.language` |
 | Health logging | `console.error` / `console.warn` |
 
-Lifecycle: `firstFrameReady()` fires on Phaser's first `POST_RENDER`;
+Lifecycle: `firstFrameReady()` fires once the first frame is scheduled;
 `gameReady()` fires when `MenuScene` is up and interactive.
 
 ---
@@ -256,104 +261,75 @@ Verified with scripted playthroughs: a run where the player never moves the
 formation dies at ~26s, and a played run finishes the 5-minute campaign at
 roughly 90-130 of 140 soldiers with the horde at its entity cap.
 
-### Perspective
+### Why it is 3D
 
-The battlefield is drawn as a receding plane, and its camera is matched to the
-reference footage rather than eyeballed. Measuring the two road edges in a
-920x1918 frame puts their intersection - the vanishing point - 2248 px above
-the top of the frame, with the firing line at 0.73 of the height. Carried into
-these units that is `HORIZON_Y = -2380` against an anchor at `ARMY_BASE_Y =
-825`, which reproduces these numbers, all verified against the running game:
+The mobile ads this is chasing render as real 3D and still ship as playable
+ads, and the reason is not that they have a bigger asset budget - it is that
+they are **low-poly 3D with flat shading and one shadowed light**, built from
+geometry simple enough to generate in code. A sprite renderer cannot produce
+that look however carefully the sprites are drawn, because what sells it is
+lighting on real geometry.
+
+Moving to it made the game *smaller*:
+
+| | before (Phaser 2D) | after (three.js 3D) |
+|---|---|---|
+| bundle, gzipped | 381 KB | **170 KB** |
+| draw calls, full battlefield | ~300 sprites | **~50** |
+| triangles | n/a | **~150k** |
+| art asset bytes | 0 | **0** |
+
+Zero asset bytes survives the move: every mesh is still built in code, now out
+of boxes instead of pixels (`src/render3d/Models.ts`). A character is a list of
+boxes merged into one geometry with the colour baked into the vertices, so
+detail is free at runtime - 180 zombies are three draw calls, not 180, however
+many boxes each of them is made of.
+
+Characters are drawn by `ActorPool`: three `InstancedMesh`es per type - body,
+left leg, right leg - which is the entire animation system. A crowd at this
+camera distance needs a stride and a bob, not a skeleton.
+
+The interface is DOM (`src/ui/`, `src/style.css`): sharper than canvas text at
+any pixel ratio, no draw calls, and it never fights the scene for depth order.
+Crate numbers and damage numbers are DOM too, positioned by projecting their
+world point and sized by the projected scale, so they follow the same
+perspective as the geometry they belong to.
+
+### Camera
+
+The camera is matched to the reference footage rather than eyeballed. Two
+numbers were measured off that footage - the deck fills 0.875 of the width at
+the firing line, and the firing line sits 0.73 of the way down the screen - and
+two camera parameters control them: how far back it sits and how far up the
+bridge it looks.
+
+`Stage.fitCamera` solves for those two numerically on every resize rather than
+deriving a closed form per aspect ratio, which means the framing is *checked*
+on whatever device it lands on instead of assumed. Read back off the live
+camera on a 420x860 viewport:
 
 | | reference | game |
 |---|---|---|
-| deck width at the firing line | 0.875 of the screen | 0.875 |
-| deck width at the top of the screen | 0.527 | 0.539 |
-| depth scale at the top of the screen | 0.616 | 0.616 |
-| depth scale at the bottom | 1.142 | 1.142 |
+| deck width at the firing line | 0.875 of the screen | 0.874 |
 | firing line, down the screen | 0.730 | 0.730 |
+| soldier body height | 0.13 of the screen | 0.13 |
 | central barrier, across the deck | 0.39 | 0.40 |
-| soldier body height | 0.13 of the screen | 0.127 |
 
-The bridge deliberately does not reach the edges of the screen
-(`FIELD_WIDTH_RATIO`): there is sky and city down both sides for the whole
-height, and that is a large part of why it reads as an elevated span rather
-than a corridor.
+### Replace the models
 
-Character size is matched at the firing line, where the depth scale is 1. A
-soldier's drawn body is 13% of the screen height at a starting squad's
-`unitScale`, which is what the reference squad measures; the scale then falls
-off as `4.6 / sqrt(count)` so a 140-strong block still fits on the deck. The
-horde is drawn at roughly 0.45 of a soldier's height, which is also what the
-reference does - it is not a consistent world scale, it is the convention that
-makes the player's squad read as heroic and the horde as a distant mass.
-
-`Viewport` owns the projection and it is deliberately a **pure horizontal
-shear**:
-
-```
-depthScale(y) = (y - HORIZON_Y) / (DEPTH_ANCHOR_Y - HORIZON_Y)   // 1 at the army line
-projectX(x, y) = centerX + (x - centerX) * depthScale(y)
-```
-
-World `y` is never touched, so no speed, range, spawn or timing value in the
-game changes because of it - only where things are *drawn*. Straight lines stay
-straight, so the deck, both railings and the lane divider converge on the same
-vanishing point that sprites are scaled against, and a point can never cross
-the divider under projection (`tests/viewport.test.ts` pins that down).
-
-Because a soldier and its target are projected the same way, a soldier firing
-"straight ahead" draws a converging line - which is what a line running away
-from the camera looks like in perspective.
-
-The scene is a *daylight* one: bright hazy sky, a city skyline, pale concrete
-deck, dark steel truss. Units are saturated shapes drawn against that light
-ground, which is what keeps a 180-strong horde readable with no outline pass.
-
-Depth is sold by four cheap things, in order of how much they buy:
-
-1. **Scale.** Every unit is drawn at `baseScale * depthScale(y)`.
-2. **Haze.** Distant units wash out toward the sky colour and lose opacity
-   (`applyHaze`, written in quantised steps so a walking zombie is not
-   re-tinted every frame), and the deck fades into the same colour. On a light
-   ground, far away means washed out - darkening would be exactly wrong.
-3. **Contact shadows**, baked into the bottom of every unit sprite rather than
-   drawn as separate objects - 150 fewer quads a frame, and a quality drop can
-   never leave the horde floating.
-4. **Converging scenery**: truss uprights, lane markings and expansion joints
-   whose spacing shrinks with distance, plus a baked three-rank city skyline in
-   the wedges either side of the bridge. `HORIZON_Y` is close enough that the
-   deck narrows to about a third of its width by the top of the field, which is
-   what opens those wedges up in the first place.
-
-`Background` bakes all of the static scene - sky, deck shading, lane washes,
-railings, divider, haze, skyline, vignette - into a **render texture at canvas
-resolution**, redrawn only when the canvas size changes, and draws it as a
-single quad. This matters more than it sounds: Phaser re-tessellates and re-fills
-a Graphics object every frame it is visible, and leaving ~25 screen-sized
-polygons in one cost a third of the frame rate. Only the scrolling detail stays
-live. (The plate is re-created rather than resized on an orientation change -
-a DynamicTexture's render target is built with `autoResize` off, so
-`RenderTexture.resize` moves the reported size while the framebuffer stays put
-and the whole background shears.)
-
-### Replace the placeholder art
-
-All sprites are generated in `src/render/TextureFactory.ts` under stable texture
-keys (`soldier_t0..t5`, `zombie_walker`, `boss_crusher`, `fx_tracer`, ...).
-Nothing in the game references anything but the key.
-
-To ship real artwork: load an atlas in `BootScene` **before** calling
-`generateTextures(this)`, and skip the generator for keys the atlas provides
-(`makeTexture` already no-ops when `scene.textures.exists(key)`).
+Every model is a list of boxes in `src/render3d/Models.ts`, merged into one
+geometry with `mergeBoxes`. To ship modelled artwork instead, load a glTF and
+return its geometry from the same functions - `ActorPool` only wants a body
+geometry and a leg geometry, and nothing else in the game knows or cares where
+they came from.
 
 ### Add a new zombie
 
 1. Add the kind to `EnemyKind` in `src/types/game.ts`.
 2. Add an entry to `ENEMY_DEFINITIONS` and a spawn cost to `ENEMY_SPAWN_COST`
    in `src/data/enemyDefinitions.ts`.
-3. Draw its placeholder in `TextureFactory.ts` and reference the key from the
-   definition.
+3. Give it a look in `BattleView`'s `ZOMBIE_LOOKS` (or its own model in
+   `Models.ts` if the body plan differs).
 4. Give it spawn weight in one or more phases in `src/data/waveDefinitions.ts`.
 
 No system code changes - movement, targeting, damage and death are generic.
@@ -417,6 +393,11 @@ score = kills
 
 - Soldiers have **no physics bodies**. Positions are formation slots eased with
   a frame-rate-independent damp.
+- Characters are **instanced**: one `InstancedMesh` per body part per type, so
+  a 180-strong horde is three draw calls. `InstancedMesh.count` tracks the live
+  number, not the capacity - leaving it at capacity and hiding spare slots with
+  a zero-scale matrix still submits their triangles, and that mistake alone
+  cost half a million triangles a frame.
 - Combat is **hitscan**; only a fraction of shots draw a tracer.
 - Enemies are pooled and indexed into per-frame **column buckets**, so a soldier
   finds a target without scanning the whole horde.
@@ -452,7 +433,7 @@ The tuning numbers are not guesses - they came from instrumented headless runs:
 1. **A full campaign playthrough** in a real browser, sampling army size, tier,
    kills, on-screen enemies and FPS every ~10s and reporting every promotion.
 2. **An isolated replay** of the spawn loop driven by the real `EnemyDirector`
-   (it is Phaser-free, so it runs as a plain test), printing authorised cost
+   (it is renderer-free, so it runs as a plain test), printing authorised cost
    per second against enemies actually spawned per second.
 
 That second harness is what exposed the spawn-budget bug: enemies/second jumped

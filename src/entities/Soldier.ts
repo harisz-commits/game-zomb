@@ -1,13 +1,12 @@
-import type Phaser from 'phaser';
 import type { Zombie } from './Zombie';
 
 /**
- * A soldier is *data first*: its position is derived from a formation slot,
- * never from a physics body. 140 soldiers therefore cost 140 cheap sprite
- * transforms instead of 140 simulated bodies.
+ * A soldier is *data only*: its position comes from a formation slot, never
+ * from a physics body, and it owns no render object at all - `BattleView`
+ * reads this and writes one instanced transform per frame. That is what lets
+ * 140 of them cost three draw calls.
  */
 export class Soldier {
-  sprite!: Phaser.GameObjects.Image;
 
   /** Current rendered position (eases toward the slot). */
   x = 0;
@@ -35,6 +34,8 @@ export class Soldier {
   phase = 0;
   /** Remaining seconds of hit flash. */
   flash = 0;
+  /** Walk-cycle phase, advanced by the view. */
+  stride = 0;
 
   reset(x: number, y: number, hp: number): void {
     this.x = x;
@@ -48,5 +49,6 @@ export class Soldier {
     this.targetTimer = 0;
     this.spawnT = 0;
     this.flash = 0;
+    this.stride = Math.random() * Math.PI * 2;
   }
 }

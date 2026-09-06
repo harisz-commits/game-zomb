@@ -15,7 +15,7 @@ automated browser smoke test (`headless Chromium, 420x860 + 900x500 + 360x800`).
 - [x] **All SDK access is centralised.** Only `src/systems/YouTubePlayablesAdapter.ts`
   references `ytgame`; gameplay code cannot reach it.
 - [x] **`firstFrameReady()` called once, after the first rendered frame.**
-  Hooked to Phaser's `POST_RENDER` in `BootScene`; guarded by a `firstFrameSent`
+  Hooked to three.js's `POST_RENDER` in `BootScene`; guarded by a `firstFrameSent`
   flag.
 - [x] **`gameReady()` called once, only when interactive.** Fired at the end of
   `MenuScene.create()`, i.e. when the PLAY button can actually be tapped.
@@ -51,7 +51,7 @@ automated browser smoke test (`headless Chromium, 420x860 + 900x500 + 360x800`).
   `MenuScene`).
 - [x] **No voice-per-shot.** Gunfire is aggregated into at most ~14 squad-level
   pops/second; a global 26-voice cap drops anything beyond it.
-- [x] **Phaser's own audio subsystem disabled** (`audio: { noAudio: true }`) -
+- [x] **three.js's own audio subsystem disabled** (`audio: { noAudio: true }`) -
   all sound is procedural WebAudio.
 
 ## Cloud save
@@ -81,7 +81,7 @@ automated browser smoke test (`headless Chromium, 420x860 + 900x500 + 360x800`).
 - [x] **Mouse**: press and drag (matches the mobile feel).
 - [x] **Keyboard (optional)**: arrow keys and A/D.
 - [x] **Touch targets >= 52 px** enforced in `Button.resize()`.
-- [x] **Hit areas verified.** A Phaser origin-normalisation bug that shifted
+- [x] **Hit areas verified.** A three.js origin-normalisation bug that shifted
   every container hit area by half its size was found by the smoke test and
   fixed (`Button.ts`, `UpgradeCard.ts`) - buttons and cards are now tappable
   across their whole surface, not just the exact centre.
@@ -125,21 +125,19 @@ automated browser smoke test (`headless Chromium, 420x860 + 900x500 + 360x800`).
 Run `npm run build && npm run size`.
 
 - [x] **Initial bundle 1.53 MiB** - target is < 15 MiB, hard limit 30 MiB.
-- [x] **Total size 1.53 MiB** - hard limit 250 MiB.
-- [x] **No file > 30 MiB** (largest is the Phaser engine chunk).
-- [~] **Soft target "files < 512 KiB"**: the app chunk is 119 KiB and
-  `index.html` 2.6 KiB, but the Phaser engine chunk is 1.41 MiB raw
-  (332 KiB gzipped). It is split into its own cacheable chunk. Going below
-  512 KiB would require a custom Phaser source build (`phaser/src/phaser-core.js`
-  plus feature flags) and dropping Container/Shape/Geom usage from the UI -
-  deliberately not done, since all hard limits pass with a ~20x margin.
-- [x] **Zero asset files.** All art is generated from `Graphics` at boot, all
-  audio is synthesised - nothing to download.
+- [x] **Total size 0.63 MiB raw / 170 KiB gzipped** - hard limit 250 MiB.
+      Roughly half what the 2D build shipped, because three.js tree-shaken to
+      what this scene uses is smaller than a full 2D engine.
+- [x] **No file > 30 MiB** (largest is the three.js chunk at 512 KiB raw).
+- [x] **Soft target "files < 512 KiB"**: app chunk 129 KiB, CSS 5 KiB,
+      `index.html` 2.8 KiB, three.js chunk 512 KiB raw / 128 KiB gzipped.
+- [x] **Zero asset files.** Every mesh is built from boxes in code, all audio
+  is synthesised - nothing to download.
 - [x] **JS heap nowhere near 512 MB.** Observed ~27-29 MB with 150 zombies and
   170 soldiers (debug overlay `HEAP`).
 - [x] **No Web Workers, no `eval()`, no WASM.**
 - [x] **Fast load.** Measured on the production build (`vite preview`):
-  the game's own chunks load in **17 ms** (app) and **55 ms** (Phaser), and the
+  the game's own chunks load in **17 ms** (app) and **55 ms** (three.js), and the
   time from `domContentLoaded` to the first rendered frame is **~600 ms** -
   texture generation plus a timeout-guarded save read. Comfortably inside the
   5 s interaction target.
@@ -152,11 +150,12 @@ Run `npm run build && npm run size`.
 
 ## Rendering & performance
 
-- [x] **WebGL with Canvas fallback** (`Phaser.AUTO`).
+- [x] **WebGL with Canvas fallback** (`three.js.AUTO`).
 - [x] **No physics bodies** for soldiers or zombies - pure arithmetic.
 - [x] **Everything transient is pooled** (tracers, particles, damage numbers,
   explosions, zombies, spits, soldier sprites).
-- [x] **Adaptive quality** degrades particles / tracers / ground light / shake only;
+- [x] **Adaptive quality** degrades shadows / shadow map size / pixel ratio /
+      particles / tracers / shake only;
   simulation values are never touched, so difficulty is device-independent.
 - [x] **Stress verified**: 146 active zombies + 99 soldiers held ~42-47 fps under
   **software rendering** (swiftshader) in the smoke test - hardware GPUs have far

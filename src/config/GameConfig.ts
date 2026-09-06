@@ -116,10 +116,12 @@ export interface QualitySettings {
   particleScale: number;
   shakeScale: number;
   damageNumbers: boolean;
-  /** Ground shadow + muzzle light under the formation. */
-  groundLight: boolean;
-  /** Secondary zombie animation (bobbing) on/off. */
-  enemyBob: boolean;
+  /** Real-time shadows from the sun. The single biggest fill-rate lever. */
+  shadows: boolean;
+  /** Shadow map resolution, when shadows are on. */
+  shadowMapSize: number;
+  /** Cap on the device pixel ratio the scene is rendered at. */
+  pixelRatio: number;
 }
 
 export const QUALITY_PRESETS: Record<QualityLevel, QualitySettings> = {
@@ -128,24 +130,27 @@ export const QUALITY_PRESETS: Record<QualityLevel, QualitySettings> = {
     particleScale: 1,
     shakeScale: 1,
     damageNumbers: true,
-    groundLight: true,
-    enemyBob: true,
+    shadows: true,
+    shadowMapSize: 1024,
+    pixelRatio: 2,
   },
   MEDIUM: {
     tracerFraction: 0.18,
     particleScale: 0.6,
     shakeScale: 0.75,
     damageNumbers: true,
-    groundLight: true,
-    enemyBob: true,
+    shadows: true,
+    shadowMapSize: 512,
+    pixelRatio: 1.5,
   },
   LOW: {
     tracerFraction: 0.09,
     particleScale: 0.3,
     shakeScale: 0.5,
     damageNumbers: false,
-    groundLight: false,
-    enemyBob: false,
+    shadows: false,
+    shadowMapSize: 512,
+    pixelRatio: 1,
   },
 };
 

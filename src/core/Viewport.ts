@@ -1,4 +1,3 @@
-import type Phaser from 'phaser';
 import {
   DEPTH_ANCHOR_Y,
   FIELD_H,
@@ -119,12 +118,6 @@ export class Viewport {
     this.visibleRight = this.centerX + visibleW / 2;
     this.visibleBottom = FIELD_H;
     this.visibleTop = FIELD_H - visibleH;
-  }
-
-  /** Applies the computed transform to a world camera. */
-  applyTo(camera: Phaser.Cameras.Scene2D.Camera): void {
-    camera.setZoom(this.zoom);
-    camera.centerOn(this.centerX, (this.visibleTop + this.visibleBottom) / 2);
   }
 
   /** Converts a screen/pointer x into world x. */

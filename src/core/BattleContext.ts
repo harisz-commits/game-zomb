@@ -1,4 +1,3 @@
-import type Phaser from 'phaser';
 import type { GameMode } from '../types/game';
 import type { EventBus } from './EventBus';
 import type { Viewport } from './Viewport';
@@ -55,14 +54,11 @@ export function createRuntimeState(mode: GameMode): RuntimeState {
  * class.
  */
 export interface BattleContext {
-  scene: Phaser.Scene;
   events: EventBus;
   rng: SeededRandom;
   viewport: Viewport;
   quality: QualityManager;
   runtime: RuntimeState;
-  worldLayer: Phaser.GameObjects.Layer;
-  uiLayer: Phaser.GameObjects.Layer;
 
   army: ArmySystem;
   enemies: EnemySystem;

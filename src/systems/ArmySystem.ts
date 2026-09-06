@@ -1,10 +1,8 @@
-import Phaser from 'phaser';
 import { BALANCE } from '../config/BalanceConfig';
 import { ARMY_BASE_Y, COLORS, ENTITY_LIMITS, FIELD_PADDING_X } from '../config/GameConfig';
 import type { BattleContext } from '../core/BattleContext';
 import { GameEvent } from '../core/EventBus';
 import { Soldier } from '../entities/Soldier';
-import { TEX, ensureSoldierTexture } from '../render/TextureFactory';
 import type { SoldierTier } from '../types/game';
 import { clamp, damp, distributeRows } from '../utils/MathUtils';
 
@@ -21,12 +19,6 @@ const SPAWN_DURATION = 0.32;
 export class ArmySystem {
   readonly soldiers: Soldier[] = [];
 
-  private readonly spritePool: Phaser.GameObjects.Image[] = [];
-  private shieldSprite!: Phaser.GameObjects.Image;
-  /** Ground shadow + muzzle light under the block. */
-  private groundShadow!: Phaser.GameObjects.Image;
-  private muzzleLight!: Phaser.GameObjects.Image;
-
   private centerX = 0;
   private targetX = 0;
   private formationHalfWidth = 60;
@@ -40,9 +32,6 @@ export class ArmySystem {
   private guardianReady = false;
 
   private tier!: SoldierTier;
-  private tierTexture = TEX.soldier(0, 0);
-  /** Weapon level the sprites are currently drawn with. */
-  private shownWeapon = -1;
 
   /** Cached layout so we only rebuild slots when the count/width changes. */
   private layoutCount = -1;
@@ -54,35 +43,8 @@ export class ArmySystem {
 
   create(): void {
     this.tier = this.ctx.promotion.currentTier;
-    this.refreshTexture();
-
     this.centerX = this.ctx.viewport.centerX;
     this.targetX = this.centerX;
-
-    this.shieldSprite = this.ctx.scene.add
-      .image(this.centerX, ARMY_BASE_Y, TEX.shield)
-      .setVisible(false)
-      .setDepth(55)
-      .setTint(0x9aa7ff);
-    this.ctx.worldLayer.add(this.shieldSprite);
-
-    // One shadow and one light for the whole block rather than 140 of each:
-    // the formation is packed tight enough that per-unit shadows would merge
-    // into the same blob anyway, at 140x the draw cost.
-    this.groundShadow = this.ctx.scene.add
-      .image(this.centerX, ARMY_BASE_Y, TEX.glow)
-      .setDepth(22)
-      .setTint(0x000000)
-      .setAlpha(0.5);
-    this.muzzleLight = this.ctx.scene.add
-      .image(this.centerX, ARMY_BASE_Y, TEX.glow)
-      .setDepth(23)
-      .setTint(0xffb45c)
-      .setBlendMode(Phaser.BlendModes.ADD)
-      .setAlpha(0);
-    this.ctx.worldLayer.add(this.groundShadow);
-    this.ctx.worldLayer.add(this.muzzleLight);
-
     this.addSoldiers(BALANCE.STARTING_SOLDIERS, true);
     this.layout(true);
   }
@@ -196,55 +158,25 @@ export class ArmySystem {
 
   private createSoldier(): Soldier {
     const soldier = new Soldier();
-    const sprite = this.obtainSprite();
-    soldier.sprite = sprite;
     soldier.phase = Math.random() * Math.PI * 2;
     // Spawn from behind the formation so reinforcements "march in".
     soldier.reset(this.centerX + (Math.random() - 0.5) * 40, ARMY_BASE_Y + 190, this.soldierMaxHp);
-    sprite.setTexture(this.tierTexture).setVisible(true).setAlpha(0).setScale(0.4);
     return soldier;
   }
 
   /**
-   * How large a single soldier is drawn.
+   * How large a single soldier is drawn, as a multiple of the base model.
    *
-   * A three-man squad should fill the lane the way it does in a real firefight;
-   * a 140-strong block cannot, or it would be a solid wall of pixels. So the
-   * sprite scale slides from big to compact as the army grows - the *block*
-   * keeps roughly the same visual weight either way.
+   * A three-man squad should fill the lane the way it does in a firefight; a
+   * 140-strong block cannot, or it would be a solid wall. Square-root falloff
+   * keeps the *block* at roughly constant visual weight either way. Read by
+   * the view - the simulation itself has no idea how big anything is drawn.
    */
-  private get unitScale(): number {
-    // Square-root falloff: the block's total footprint grows with the roster
-    // instead of exploding with it. The cap is set so a starting squad matches
-    // the reference's character size at the firing line; the floor keeps a
-    // full 140 readable.
+  get unitScale(): number {
     return clamp(4.6 / Math.sqrt(Math.max(1, this.soldiers.length)), 0.55, 1.55);
   }
 
-  /** Re-points the sprites at the current tier + weapon combination. */
-  private refreshTexture(): void {
-    const weapon = this.ctx.upgrades.weaponIndex;
-    this.tierTexture = ensureSoldierTexture(this.ctx.scene, this.tier.visual, weapon);
-    this.shownWeapon = weapon;
-    for (const soldier of this.soldiers) {
-      soldier.sprite.setTexture(this.tierTexture);
-      if (this.tier.prestige > 0) soldier.sprite.setTint(this.tier.accentColor);
-      else soldier.sprite.clearTint();
-    }
-  }
-
-  private obtainSprite(): Phaser.GameObjects.Image {
-    const recycled = this.spritePool.pop();
-    if (recycled) return recycled;
-    const sprite = this.ctx.scene.add.image(0, 0, this.tierTexture).setDepth(30);
-    this.ctx.worldLayer.add(sprite);
-    return sprite;
-  }
-
   private releaseSoldier(index: number): void {
-    const soldier = this.soldiers[index];
-    soldier.sprite.setVisible(false).clearTint();
-    this.spritePool.push(soldier.sprite);
     this.soldiers.splice(index, 1);
     this.layoutCount = -1;
   }
@@ -360,12 +292,6 @@ export class ArmySystem {
   /** Rebuilds the army at a new tier with the converted count. */
   applyPromotion(tier: SoldierTier, newCount: number): void {
     this.tier = tier;
-    this.tierTexture = ensureSoldierTexture(
-      this.ctx.scene,
-      tier.visual,
-      this.ctx.upgrades.weaponIndex,
-    );
-    this.shownWeapon = this.ctx.upgrades.weaponIndex;
 
     const target = clamp(newCount, 1, SPRITE_CAPACITY);
     while (this.soldiers.length > target) this.releaseSoldier(this.soldiers.length - 1);
@@ -373,10 +299,6 @@ export class ArmySystem {
 
     const maxHp = this.soldierMaxHp;
     for (const soldier of this.soldiers) {
-      soldier.sprite.setTexture(this.tierTexture);
-      // Prestige tiers reuse the Black Ops silhouette, tinted by accent colour.
-      if (tier.prestige > 0) soldier.sprite.setTint(tier.accentColor);
-      else soldier.sprite.clearTint();
       soldier.maxHp = maxHp;
       soldier.hp = maxHp; // a promotion fully restores the line
       soldier.spawnT = 0.35;
@@ -415,14 +337,9 @@ export class ArmySystem {
 
     this.layout(false);
 
-    // A weapon crate changes the gun in every soldier's hands - that is the
-    // whole point of the weapon ladder, so it must land on the same frame.
-    if (this.ctx.upgrades.weaponIndex !== this.shownWeapon) this.refreshTexture();
-
     const mods = this.ctx.upgrades.modifiers;
     const regen = mods.regenPerSecond;
     const maxHp = this.soldierMaxHp;
-    const unitScale = this.unitScale;
 
     for (const soldier of this.soldiers) {
       if (soldier.spawnT < 1) {
@@ -435,79 +352,17 @@ export class ArmySystem {
       soldier.x = damp(soldier.x, soldier.slotX, BALANCE.SOLDIER_LERP, dt);
       soldier.y = damp(soldier.y, soldier.slotY, BALANCE.SOLDIER_LERP, dt);
 
-      const sprite = soldier.sprite;
-      const eased = soldier.spawnT * soldier.spawnT * (3 - 2 * soldier.spawnT);
-      // Rows further from the camera sit closer to the vanishing point and are
-      // drawn smaller - the back of a 140-strong block visibly recedes.
-      const depth = viewport.depthScale(soldier.y);
-      sprite.x = viewport.projectX(soldier.x, soldier.y);
-      // Subtle idle bob keeps the formation alive without extra objects.
-      sprite.y = soldier.y + Math.sin(soldier.phase + this.ctx.runtime.elapsed * 4) * 0.8;
-      sprite.setAlpha(eased);
-      sprite.setScale((0.55 + eased * 0.45) * depth * unitScale);
-
-      if (soldier.flash > 0) {
-        soldier.flash -= dt;
-        sprite.setTintFill(0xffffff);
-        if (soldier.flash <= 0) {
-          if (this.tier.prestige > 0) sprite.setTint(this.tier.accentColor);
-          else sprite.clearTint();
-        }
-      }
+      if (soldier.flash > 0) soldier.flash -= dt;
     }
 
     if (this.doubleReinforcementTimer > 0) this.doubleReinforcementTimer -= dt;
 
-    this.updateGroundLight();
     this.updateShield(dt);
     this.updateGuardian(dt);
   }
 
-  /**
-   * Grounds the block: a soft shadow on the deck, plus a warm light that
-   * swells with the volume of fire. Sold entirely by two stretched sprites.
-   */
-  private updateGroundLight(): void {
-    const viewport = this.ctx.viewport;
-    const y = this.frontRowY + 70;
-    const depth = viewport.depthScale(y);
-    const width = Math.max(120, this.formationHalfWidth * 2.5) * depth;
-    const x = viewport.projectX(this.centerX, y);
-
-    if (!this.ctx.quality.settings.groundLight) {
-      this.groundShadow.setAlpha(0);
-      this.muzzleLight.setAlpha(0);
-      return;
-    }
-
-    this.groundShadow
-      .setPosition(x, y)
-      .setDisplaySize(width, width * 0.62)
-      .setAlpha(this.count > 0 ? 0.5 : 0);
-
-    // gunfireRate is shots/second across the whole army.
-    const intensity = clamp(this.ctx.runtime.gunfireRate / 90, 0, 1);
-    this.muzzleLight
-      .setPosition(x, this.frontRowY - 6)
-      .setDisplaySize(width * 1.15, width * 0.7)
-      .setAlpha(intensity * 0.42);
-  }
-
   private updateShield(dt: number): void {
-    if (this.shieldTimer > 0) {
-      this.shieldTimer -= dt;
-      const size = Math.max(140, this.formationHalfWidth * 2.6);
-      this.shieldSprite
-        .setVisible(true)
-        .setPosition(
-          this.ctx.viewport.projectX(this.centerX, this.frontRowY + 60),
-          this.frontRowY + 60,
-        )
-        .setDisplaySize(size, size * 0.8)
-        .setAlpha(0.25 + Math.sin(this.ctx.runtime.elapsed * 12) * 0.08);
-    } else if (this.shieldSprite.visible) {
-      this.shieldSprite.setVisible(false);
-    }
+    if (this.shieldTimer > 0) this.shieldTimer -= dt;
   }
 
   private updateGuardian(dt: number): void {
@@ -583,10 +438,6 @@ export class ArmySystem {
         const soldier = this.soldiers[index++];
         if (!soldier) break;
         soldier.row = row;
-        // Rows nearer the camera paint over the ones behind them. Set here
-        // rather than per frame: re-sorting the display list every frame for
-        // a formation that only changes on a roster change is wasted work.
-        soldier.sprite.setDepth(30 + row * 0.01);
         soldier.slotOffsetX = startOffset + col * spacing + stagger;
         soldier.slotX = this.centerX + soldier.slotOffsetX;
         soldier.slotY = rowY;
@@ -598,7 +449,8 @@ export class ArmySystem {
   }
 
   reset(): void {
-    while (this.soldiers.length > 0) this.releaseSoldier(this.soldiers.length - 1);
+    this.soldiers.length = 0;
+    this.layoutCount = -1;
     this.reinforcementPoints = 0;
     this.doubleReinforcementTimer = 0;
     this.shieldTimer = 0;

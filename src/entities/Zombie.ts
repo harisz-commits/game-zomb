@@ -1,4 +1,3 @@
-import type Phaser from 'phaser';
 import type { EnemyDefinition, EnemyKind } from '../types/game';
 
 /**
@@ -6,7 +5,6 @@ import type { EnemyDefinition, EnemyKind } from '../types/game';
  * collision are plain arithmetic, which keeps 150 simultaneous zombies cheap.
  */
 export class Zombie {
-  sprite!: Phaser.GameObjects.Image;
 
   def!: EnemyDefinition;
   kind: EnemyKind = 'WALKER';
@@ -41,8 +39,8 @@ export class Zombie {
 
   /** Sprite scale before perspective (elite units are bulkier). */
   baseScale = 1;
-  /** Quantised haze level; -1 forces the next tint write. */
-  fogStep = -1;
+  /** Walk-cycle phase, advanced by the view. */
+  stride = 0;
 
   /** Burning (napalm) state. */
   burnTimer = 0;

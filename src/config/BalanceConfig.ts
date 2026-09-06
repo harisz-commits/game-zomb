@@ -70,7 +70,7 @@ export const BALANCE = {
   /** Seconds before the first supply block enters the lane. */
   SUPPLY_FIRST_AT: 2,
   /** Vertical gap between blocks in the stack. */
-  LANE_BLOCK_GAP: 10,
+  LANE_BLOCK_GAP: 26,
   LANE_BIG_BLOCK_HEIGHT: 240,
   LANE_FILLER_BLOCK_HEIGHT: 92,
   LANE_BLOCK_WIDTH_RATIO: 0.88,

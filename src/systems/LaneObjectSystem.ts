@@ -1,22 +1,18 @@
 import { BALANCE } from '../config/BalanceConfig';
-import { FONT_FAMILY, WORLD_SCROLL_SPEED } from '../config/GameConfig';
+import { WORLD_SCROLL_SPEED } from '../config/GameConfig';
 import type { BattleContext } from '../core/BattleContext';
 import { GameEvent } from '../core/EventBus';
 import { LaneObject, type Lane, type LaneReward } from '../entities/LaneObject';
-import { TEX } from '../render/TextureFactory';
 import { MAX_WEAPON_LEVEL } from '../data/weaponTiers';
-import { clamp, damp, formatCompact, lerp, mixColor } from '../utils/MathUtils';
+import { clamp, damp, lerp } from '../utils/MathUtils';
 import { ObjectPool } from '../utils/ObjectPool';
 import { audio } from './AudioSystem';
 
 const MAX_LANE_OBJECTS = 26;
 const FLASH_DURATION = 0.035;
 // Without a cooldown the crate under sustained fire re-arms its flash every
-// frame and renders as a solid white block instead of ice.
+// frame and reads as a solid white block instead of ice.
 const FLASH_COOLDOWN = 0.26;
-/** Matches the haze the horde fades into, so both lanes recede together. */
-const HAZE_TINT = 0xb9cddd;
-const HAZE_STEPS = 10;
 
 /**
  * The two things on the bridge that have to be shot open.
@@ -47,9 +43,6 @@ export class LaneObjectSystem {
       () => this.createObject(),
       (o) => {
         o.active = false;
-        o.sprite.setVisible(false);
-        o.label.setVisible(false);
-        o.icon.setVisible(false);
       },
       MAX_LANE_OBJECTS,
       10,
@@ -57,31 +50,7 @@ export class LaneObjectSystem {
   }
 
   private createObject(): LaneObject {
-    const scene = this.ctx.scene;
-    const item = new LaneObject();
-    item.sprite = scene.add.image(0, 0, TEX.ice).setVisible(false).setDepth(28);
-    item.icon = scene.add
-      .image(0, 0, TEX.weaponIcon(0))
-      .setOrigin(0.5)
-      .setVisible(false)
-      .setDepth(29);
-    item.label = scene.add
-      .text(0, 0, '', {
-        fontFamily: FONT_FAMILY,
-        fontSize: '42px',
-        color: '#ffffff',
-        fontStyle: 'bold',
-        stroke: '#0a0d14',
-        strokeThickness: 7,
-      })
-      .setOrigin(0.5)
-      .setVisible(false)
-      .setDepth(30);
-
-    this.ctx.worldLayer.add(item.sprite);
-    this.ctx.worldLayer.add(item.icon);
-    this.ctx.worldLayer.add(item.label);
-    return item;
+    return new LaneObject();
   }
 
   create(): void {
@@ -120,7 +89,6 @@ export class LaneObjectSystem {
     if (item.flashCooldown <= 0) {
       item.flash = FLASH_DURATION;
       item.flashCooldown = FLASH_COOLDOWN;
-      item.sprite.setTintFill(0xffffff);
     }
 
     if (item.hp <= 0) {
@@ -207,7 +175,6 @@ export class LaneObjectSystem {
     this.maybeSpawnBarrier();
 
     const frontLine = this.ctx.army.frontY;
-    const viewport = this.ctx.viewport;
     const drift = WORLD_SCROLL_SPEED * dt;
 
     for (let i = this.active.length - 1; i >= 0; i--) {
@@ -222,50 +189,11 @@ export class LaneObjectSystem {
       }
 
       if (item.flashCooldown > 0) item.flashCooldown -= dt;
-      if (item.flash > 0) {
-        item.flash -= dt;
-        if (item.flash <= 0) this.applyHaze(item, true);
-      } else {
-        this.applyHaze(item, false);
-      }
-
-      // Both lanes converge on the same vanishing point as the units, so a
-      // crate keeps filling its lane no matter how far up the bridge it sits.
-      const depth = viewport.depthScale(item.y);
-      const px = viewport.projectX(item.x, item.y);
-      item.sprite.setPosition(px, item.y).setDisplaySize(item.width * depth, item.height);
-      item.icon.setPosition(px, item.y - item.height * 0.26).setScale(item.iconScale * depth);
-      item.label.setPosition(px, item.y + item.height * 0.1).setScale(depth);
-
-      // Re-rasterising a Text object is expensive: only write when it changes.
-      const shown =
-        item.kind === 'ICE' ? Math.max(0, Math.ceil(item.hp)) : this.remainingPenalty(item);
-      if (shown !== item.shownHp) {
-        item.shownHp = shown;
-        // Late-run crates run to five digits; compact form keeps the number
-        // inside the crate instead of spilling across both lanes.
-        item.label.setText(item.kind === 'ICE' ? formatCompact(shown) : `-${shown}`);
-        if (item.kind === 'BARRIER' && shown === 0) {
-          item.label.setColor('#7fd4a2');
-          item.sprite.setAlpha(0.45);
-        }
-      }
-
-      if (item.kind === 'ICE' && item.flash <= 0) {
-        item.sprite.setAlpha(0.82 + item.hpRatio * 0.18);
-      }
+      if (item.flash > 0) item.flash -= dt;
 
       // Only barriers ever reach the line; the stack never does.
       if (item.lane === 'COMBAT' && item.top > frontLine) this.resolveBarrier(item);
     }
-  }
-
-  /** Distance haze, matching the horde's (see EnemySystem.applyHaze). */
-  private applyHaze(item: LaneObject, force: boolean): void {
-    const step = Math.round(this.ctx.viewport.fogAlpha(item.y) * HAZE_STEPS);
-    if (!force && step === item.fogStep) return;
-    item.fogStep = step;
-    item.sprite.setTint(mixColor(0xffffff, HAZE_TINT, (step / HAZE_STEPS) * 0.75));
   }
 
   /** Soldiers this barrier still costs. Counts down as you shoot it. */
@@ -393,29 +321,16 @@ export class LaneObjectSystem {
     item.flash = 0;
     item.flashCooldown = 0;
     item.shownHp = -1;
-    item.fogStep = -1;
 
     // Enter from above the last crate so it slides in rather than popping.
     const last = this.stack[this.stack.length - 1];
     item.y = last ? last.targetY - last.height : viewport.visibleTop - 120;
     item.targetY = item.y;
 
-    item.sprite
-      .setTexture(TEX.ice)
-      .setVisible(true)
-      .setDisplaySize(width, height)
-      .setPosition(item.x, item.y)
-      .setAlpha(1)
-      .clearTint();
-    const bigCrate = height > 100;
-    item.icon
-      .setVisible(bigCrate)
-      .setTexture(TEX.weaponIcon(iconWeaponLevel(reward, this.ctx.upgrades.weaponIndex)));
-    item.iconScale = (width * 0.62) / 84;
-    item.label
-      .setVisible(true)
-      .setFontSize(height > 100 ? 46 : 26)
-      .setColor('#ffffff');
+    // Only the big crates advertise what is inside; the "+1" fillers are
+    // self-explanatory and a glyph on them would just be noise.
+    item.iconWeapon =
+      height > 100 ? iconWeaponLevel(reward, this.ctx.upgrades.weaponIndex) : -1;
 
     this.active.push(item);
     this.stack.push(item);
@@ -460,17 +375,7 @@ export class LaneObjectSystem {
     item.flash = 0;
     item.flashCooldown = 0;
     item.shownHp = -1;
-    item.fogStep = -1;
-
-    item.sprite
-      .setTexture(TEX.barrier)
-      .setVisible(true)
-      .setDisplaySize(width, item.height)
-      .setPosition(item.x, item.y)
-      .setAlpha(1)
-      .clearTint();
-    item.icon.setVisible(false);
-    item.label.setVisible(true).setFontSize(42).setColor('#ffe4e4');
+    item.iconWeapon = -1;
 
     this.active.push(item);
   }
@@ -492,7 +397,6 @@ export class LaneObjectSystem {
         item.x = viewport.combatLaneCenterX;
         item.width = viewport.combatLaneWidth * BALANCE.BARRIER_WIDTH_RATIO;
       }
-      item.sprite.setDisplaySize(item.width * viewport.depthScale(item.y), item.height);
     }
     this.relayoutStack();
   }

@@ -24,7 +24,7 @@ export default defineConfig({
         // Engine and game code are split so the (large, stable) Phaser chunk
         // is cacheable and the game chunk stays small and easy to inspect.
         manualChunks(id) {
-          if (id.includes('node_modules/phaser')) return 'phaser';
+          if (id.includes('node_modules/three')) return 'three';
           return undefined;
         },
       },

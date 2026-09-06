@@ -1,5 +1,3 @@
-import type Phaser from 'phaser';
-
 /** Which lane an object travels down. */
 export type Lane = 'SUPPLY' | 'COMBAT';
 
@@ -29,11 +27,6 @@ export type LaneObjectKind = 'ICE' | 'BARRIER';
  * Both are pooled and moved with plain arithmetic - no physics bodies.
  */
 export class LaneObject {
-  sprite!: Phaser.GameObjects.Image;
-  label!: Phaser.GameObjects.Text;
-  /** Neon glyph of what is frozen inside. */
-  icon!: Phaser.GameObjects.Image;
-
   kind: LaneObjectKind = 'ICE';
   lane: Lane = 'SUPPLY';
   active = false;
@@ -57,14 +50,12 @@ export class LaneObject {
   flashCooldown = 0;
   /** Ordering within its lane; the lowest sequence is the front object. */
   sequence = 0;
-  /** Last value written to `label`; guards against per-frame re-rasterising. */
+  /** Last value the HUD label showed; guards against needless DOM writes. */
   shownHp = -1;
   /** Slot the crate eases toward after the stack advances. */
   targetY = 0;
-  /** Quantised distance haze; -1 forces the next tint write. */
-  fogStep = -1;
-  /** Base scale for the neon glyph, before perspective. */
-  iconScale = 1;
+  /** Weapon glyph to show on the crate, or -1 for none. */
+  iconWeapon = -1;
 
   get top(): number {
     return this.y - this.height / 2;

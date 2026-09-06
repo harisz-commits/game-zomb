@@ -1,7 +1,7 @@
 /**
  * Shared, engine-agnostic game types.
  *
- * Nothing in this file may import Phaser - it is consumed by pure logic
+ * Nothing in this file may import a renderer - it is consumed by pure logic
  * systems that run inside the unit test suite (node environment).
  */
 
