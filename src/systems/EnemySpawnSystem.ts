@@ -31,8 +31,13 @@ export interface DamageOptions {
 const ELITE_TINT = 0xff7ad1;
 const FLASH_DURATION = 0.05;
 const FLASH_COOLDOWN = 0.17;
-/** Colour distant units fade toward. Warmer than the sky so they stay legible. */
-const HAZE_TINT = 0x3b4759;
+/**
+ * Distance haze on a *bright* day: units wash out toward the sky colour and
+ * lose opacity, so the pale deck shows through. Darkening would be wrong here -
+ * on a light ground, far away means washed out, not black.
+ */
+const HAZE_TINT = 0xb9cddd;
+const HAZE_MIN_ALPHA = 0.5;
 /** Haze is written in steps so a walking zombie is not re-tinted every frame. */
 const HAZE_STEPS = 10;
 
@@ -110,7 +115,10 @@ export class EnemySystem {
     const viewport = this.ctx.viewport;
     const margin = def.radius + 24;
 
-    const hpMult = this.ctx.director.getHpMultiplier(this.ctx.runtime.elapsed);
+    const hpMult = this.ctx.director.getHpMultiplier(
+      this.ctx.runtime.elapsed,
+      this.ctx.army.tierPower,
+    );
     const speedMult = this.ctx.director.getSpeedMultiplier(this.ctx.runtime.elapsed);
 
     zombie.def = def;
@@ -127,14 +135,19 @@ export class EnemySystem {
         viewport.combatLaneRight - margin,
       );
     zombie.y = y ?? viewport.spawnY - this.ctx.rng.range(0, 90);
-    // Funnel tight enough that a small squad can cover the column.
-    zombie.driftX = this.ctx.rng.range(-55, 55);
+    // The horde spreads across its lane, so it arrives as a wall. A squad can
+    // never cover the whole width at once - that is the pressure.
+    const spread = viewport.combatLaneWidth * BALANCE.HORDE_SPREAD_RATIO;
+    zombie.driftX = this.ctx.rng.range(-spread, spread);
 
     const eliteHp = zombie.elite ? BALANCE.ELITE_HP_MULT : 1;
     zombie.maxHp = def.hp * hpMult * eliteHp;
     zombie.hp = zombie.maxHp;
     zombie.speed = def.speed * speedMult;
-    zombie.damage = def.damage * (zombie.elite ? BALANCE.ELITE_DAMAGE_MULT : 1);
+    zombie.damage =
+      def.damage *
+      (zombie.elite ? BALANCE.ELITE_DAMAGE_MULT : 1) *
+      this.ctx.director.getDamageMultiplier(this.ctx.army.tierPower);
     zombie.attackInterval = def.attackInterval;
     zombie.attackTimer = this.ctx.rng.range(0, def.attackInterval);
     zombie.armor = def.armor;
@@ -153,7 +166,7 @@ export class EnemySystem {
     zombie.abilityTimer = zombie.boss ? 3 : 0;
     zombie.phaseIndex = 0;
 
-    zombie.baseScale = zombie.elite ? BALANCE.ELITE_SCALE : 1;
+    zombie.baseScale = (zombie.elite ? BALANCE.ELITE_SCALE : 1) * BALANCE.ENEMY_VISUAL_SCALE;
     zombie.fogStep = -1;
 
     const depth = viewport.depthScale(zombie.y);
@@ -181,7 +194,7 @@ export class EnemySystem {
 
     boss.maxHp *= hpScale;
     boss.hp = boss.maxHp;
-    boss.sprite.setScale(1).setAlpha(0);
+    boss.sprite.setAlpha(0);
 
     this.currentBoss = boss;
     this.ctx.runtime.bossActive = true;
@@ -212,7 +225,7 @@ export class EnemySystem {
         kind,
         elite && i === 0,
         clamp(
-          anchor + this.ctx.rng.range(-70, 70),
+          anchor + this.ctx.rng.range(-110, 110),
           viewport.combatLaneLeft + 16,
           viewport.combatLaneRight - 16,
         ),
@@ -452,7 +465,9 @@ export class EnemySystem {
     if (!force && step === z.fogStep) return;
     z.fogStep = step;
     const base = z.elite ? ELITE_TINT : 0xffffff;
-    z.sprite.setTint(mixColor(base, HAZE_TINT, step / HAZE_STEPS));
+    const fogAmount = step / HAZE_STEPS;
+    z.sprite.setTint(mixColor(base, HAZE_TINT, fogAmount * 0.75));
+    if (!z.boss) z.sprite.setAlpha(1 - fogAmount * (1 - HAZE_MIN_ALPHA));
   }
 
   /* --------------------------------------------------------------- query -- */

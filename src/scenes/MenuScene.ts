@@ -81,7 +81,7 @@ export class MenuScene extends Phaser.Scene {
 
     // A tiny squad of soldiers as decoration - reuses the generated textures.
     for (let i = 0; i < 7; i++) {
-      this.decor.push(this.add.image(0, 0, TEX.soldier(Math.min(5, Math.floor(i / 2)))));
+      this.decor.push(this.add.image(0, 0, TEX.soldier(Math.min(5, Math.floor(i / 2)), Math.min(5, Math.floor(i / 2)))));
     }
 
     this.scale.on(Phaser.Scale.Events.RESIZE, this.layout, this);

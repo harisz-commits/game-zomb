@@ -146,13 +146,41 @@ export class EnemyDirector {
     return clamp(this.currentPhase.eliteChance + this.endless.eliteChanceAdd, 0, 0.45);
   }
 
-  /** Time+modifier based HP multiplier applied to every spawned enemy. */
-  getHpMultiplier(elapsed: number): number {
-    const scaled = Math.pow(
+  /**
+   * HP multiplier applied to every spawned enemy.
+   *
+   * Two terms. Time is the floor, but the one that matters is *tier power*:
+   * a soldier's damage is proportional to it, so without this term the horde
+   * became irrelevant the moment the promotion ladder got going - eight
+   * promotions in a five minute run meant the army hit 256x harder than the
+   * enemies it was shooting.
+   *
+   * The exponent is deliberately below 1, so a promotion is still a real gain
+   * (`tierPower^(1 - exponent)` net, plus the army regrowing afterwards) - it
+   * just is not a free win.
+   */
+  getHpMultiplier(elapsed: number, tierPower = 1): number {
+    const overTime = Math.pow(
       1 + elapsed / BALANCE.ZOMBIE_HP_SCALING_TIME,
       BALANCE.ZOMBIE_HP_SCALING_POWER,
     );
-    return scaled * this.endless.hpMultiplier;
+    const withPower = Math.pow(
+      Math.max(1, tierPower),
+      BALANCE.ZOMBIE_HP_TIER_EXPONENT,
+    );
+    return overTime * withPower * this.endless.hpMultiplier;
+  }
+
+  /**
+   * Damage multiplier applied to every spawned enemy.
+   *
+   * Soldier HP is proportional to tier power, so without the matching term
+   * here a zombie that reached the line stopped being able to kill anyone the
+   * moment the army promoted once - the line held itself and the run played
+   * out on rails. Same exponent as HP, for the same reason.
+   */
+  getDamageMultiplier(tierPower = 1): number {
+    return Math.pow(Math.max(1, tierPower), BALANCE.ZOMBIE_HP_TIER_EXPONENT);
   }
 
   getSpeedMultiplier(elapsed: number): number {

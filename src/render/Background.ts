@@ -3,33 +3,30 @@ import { ARMY_BASE_Y, COLORS, WORLD_SCROLL_SPEED } from '../config/GameConfig';
 import type { Viewport } from '../core/Viewport';
 
 /** World spacing of the railing posts at the army line. */
-const POST_SPACING = 104;
-/** World spacing of the divider dashes at the army line. */
-const DASH_SPACING = 118;
-const DASH_LENGTH = 58;
-/** World spacing of the road seams at the army line. */
-const SEAM_SPACING = 236;
+const POST_SPACING = 96;
+/** World spacing of the white lane markings. */
+const MARKING_SPACING = 150;
+const MARKING_LENGTH = 74;
+/** World spacing of the deck's expansion joints. */
+const SEAM_SPACING = 300;
 
-/** Bands used to shade the deck from "lit" at the line to "hazy" up-field. */
+/** Bands used to shade the deck from lit at the line to hazy up-field. */
 const DECK_BANDS = 18;
-const DECK_NEAR = 0x3b4553;
-const DECK_FAR = 0x161d29;
 
 /**
- * The bridge, drawn as a receding plane.
+ * The bridge: a daylight highway span seen from behind the formation.
  *
- * Everything is built from the viewport's projection, so the two lanes, the
- * divider and both railings converge on the same vanishing point the sprites
- * are scaled against. That shared vanishing point is what makes a flat 2D
- * scene read as depth.
+ * Everything is built from the viewport's projection, so the deck, both truss
+ * railings and the central barrier converge on the same vanishing point the
+ * sprites are scaled against. That shared vanishing point is what makes a flat
+ * 2D scene read as depth.
  *
- * All of that static geometry - sky, deck shading, lane washes, railings,
- * distance haze, edge vignette - is *baked into a render texture* whenever the
- * canvas changes size, and drawn as a single quad afterwards. That matters:
- * Phaser re-tessellates and re-fills a Graphics object every frame it is
- * visible, so leaving ~25 screen-sized polygons in one cost more than a third
- * of the frame rate on a software rasteriser. Only the scrolling detail -
- * posts, dashes, seams - stays live, and that is a few dozen small quads.
+ * All static geometry - sky, city, deck shading, lane washes, truss steel,
+ * haze - is *baked into a render texture* whenever the canvas changes size,
+ * and drawn as a single quad afterwards. That matters: Phaser re-tessellates
+ * and re-fills a Graphics object every frame it is visible, so leaving a few
+ * dozen screen-sized polygons in one costs a third of the frame rate. Only the
+ * scrolling detail stays live.
  */
 export class Background {
   private readonly scene: Phaser.Scene;
@@ -107,9 +104,8 @@ export class Background {
     const g = this.scratch;
     g.clear();
 
-    // Canvas-space helpers: the plate is drawn in pixels, then mapped back
-    // onto the visible world rectangle 1:1.
-    const px = (worldX: number, worldY: number) => (v.projectX(worldX, worldY) - v.visibleLeft) * v.zoom;
+    const px = (worldX: number, worldY: number) =>
+      (v.projectX(worldX, worldY) - v.visibleLeft) * v.zoom;
     const py = (worldY: number) => (worldY - v.visibleTop) * v.zoom;
     const quad = (xl: number, xr: number, yt: number, yb: number) => {
       g.fillPoints(
@@ -125,82 +121,62 @@ export class Background {
 
     const top = v.visibleTop;
     const bottom = v.visibleBottom;
+    // Everything above this is "far": sky, city, haze.
+    const horizon = py(ARMY_BASE_Y - 620);
 
-    // Sky / void either side of the bridge.
-    const skyTop = Phaser.Display.Color.IntegerToColor(COLORS.bgTop);
-    const skyBottom = Phaser.Display.Color.IntegerToColor(COLORS.bgBottom);
-    for (let i = 0; i < 24; i++) {
-      const t = i / 23;
-      const c = Phaser.Display.Color.Interpolate.ColorWithColor(skyTop, skyBottom, 1, t);
-      g.fillStyle(Phaser.Display.Color.GetColor(c.r, c.g, c.b), 1);
-      g.fillRect(0, (h * i) / 24, w, h / 24 + 1);
-    }
+    this.drawSky(g, w, h, horizon);
+    this.drawCity(g, v, w, horizon);
 
-    // The deck, shaded band by band: lit at the line, hazy up-field. The lane
-    // washes are folded into the band colours so they cost no extra fill.
-    const near = Phaser.Display.Color.IntegerToColor(DECK_NEAR);
-    const far = Phaser.Display.Color.IntegerToColor(DECK_FAR);
+    // The deck, shaded band by band: lit near the line, hazy up-field. The
+    // lane washes are folded into the band colours so they cost no extra fill.
+    const near = Phaser.Display.Color.IntegerToColor(COLORS.deckNear);
+    const far = Phaser.Display.Color.IntegerToColor(COLORS.deckFar);
     for (let i = 0; i < DECK_BANDS; i++) {
       const y0 = top + ((bottom - top) * i) / DECK_BANDS;
       const y1 = top + ((bottom - top) * (i + 1)) / DECK_BANDS + 1 / v.zoom;
       const t = i / (DECK_BANDS - 1);
       const c = Phaser.Display.Color.Interpolate.ColorWithColor(far, near, 1, t);
-      // Supply side reads cool, horde side reads hot - the lanes are the whole
-      // decision, so they get their own light.
-      g.fillStyle(tint(c, 0.94, 1.0, 1.14), 1);
+      // Supply side reads a touch cooler, horde side a touch warmer.
+      g.fillStyle(tint(c, 0.98, 1.0, 1.03), 1);
       quad(v.supplyLaneLeft, v.supplyLaneRight, y0, y1);
-      g.fillStyle(tint(c, 1.16, 0.96, 0.94), 1);
+      g.fillStyle(tint(c, 1.02, 0.995, 0.98), 1);
       quad(v.combatLaneLeft, v.combatLaneRight, y0, y1);
     }
 
-    // Outer railings: dark kerb with a lit inner edge.
-    for (const edge of [v.fieldLeft, v.fieldRight]) {
-      const inner = edge === v.fieldLeft ? 9 : -9;
-      g.fillStyle(0x11161f, 1);
-      quad(edge - 14, edge + 14, top, bottom);
-      g.fillStyle(0x515f74, 0.85);
-      quad(edge + inner - 3, edge + inner + 3, top, bottom);
-    }
+    // Kerbs along both edges and either side of the central barrier.
+    g.fillStyle(COLORS.steelLit, 0.55);
+    quad(v.fieldLeft + 6, v.fieldLeft + 16, top, bottom);
+    quad(v.fieldRight - 16, v.fieldRight - 6, top, bottom);
+    g.fillStyle(0x6d7684, 0.4);
+    quad(v.dividerX - 26, v.dividerX - 20, top, bottom);
+    quad(v.dividerX + 20, v.dividerX + 26, top, bottom);
 
-    // Central divider - the line the whole game is played around.
-    g.fillStyle(0x0e131c, 1);
-    quad(v.dividerX - 13, v.dividerX + 13, top, bottom);
-    g.fillStyle(0x39445a, 0.9);
-    quad(v.dividerX - 13, v.dividerX - 9, top, bottom);
-    quad(v.dividerX + 9, v.dividerX + 13, top, bottom);
+    // The line the army holds, and the shaded apron behind it.
+    g.fillStyle(0x7fd4a2, 0.3);
+    quad(v.fieldLeft, v.fieldRight, ARMY_BASE_Y - 34, ARMY_BASE_Y - 27);
+    g.fillStyle(0x5a6472, 0.14);
+    quad(v.fieldLeft, v.fieldRight, ARMY_BASE_Y + 60, bottom);
 
-    // The line the army holds, plus the darker apron behind it.
-    g.fillStyle(COLORS.accentGreen, 0.16);
-    quad(v.fieldLeft, v.fieldRight, ARMY_BASE_Y - 34, ARMY_BASE_Y - 28);
-    g.fillStyle(0x080b12, 0.5);
-    quad(v.fieldLeft, v.fieldRight, ARMY_BASE_Y + 46, bottom);
+    this.drawTruss(g, v, top, bottom);
 
-    // A city beside the bridge. Purely baked scenery: it fills the dark
-    // wedges the converging road leaves at the top of the screen, which is
-    // what turns "a road on black" into "a road going somewhere".
-    this.drawSkyline(g, v, w, h);
-
-    // Distance haze. The units carry their own haze tint (see
-    // EnemySystem.applyHaze); this is the ground plane's share of it.
-    const hazeBottom = py(ARMY_BASE_Y - 40);
-    const hazeColor = Phaser.Display.Color.IntegerToColor(COLORS.bgTop);
-    const hazeSteps = 28;
+    // Distance haze over everything on the deck.
+    const hazeBottom = py(ARMY_BASE_Y - 90);
+    const haze = Phaser.Display.Color.IntegerToColor(COLORS.haze);
+    const hazeColor = Phaser.Display.Color.GetColor(haze.red, haze.green, haze.blue);
+    const hazeSteps = 26;
     for (let i = 0; i < hazeSteps; i++) {
       const t = i / (hazeSteps - 1);
-      g.fillStyle(
-        Phaser.Display.Color.GetColor(hazeColor.red, hazeColor.green, hazeColor.blue),
-        (1 - t) * (1 - t) * 0.82,
-      );
+      g.fillStyle(hazeColor, (1 - t) * (1 - t) * 0.6);
       g.fillRect(0, (hazeBottom * i) / hazeSteps, w, hazeBottom / hazeSteps + 1);
     }
 
     // Edge vignette, baked in rather than drawn as a screen-space quad on top
     // of the finished frame - same look, no per-frame full-screen blend.
-    const steps = 22;
+    const steps = 20;
     for (let i = 0; i < steps; i++) {
       const t = i / steps;
-      const inset = (i * Math.min(w, h)) / (steps * 5);
-      g.lineStyle(Math.max(2, Math.min(w, h) / (steps * 5)), 0x000000, 0.07 * (1 - t) ** 1.5);
+      const inset = (i * Math.min(w, h)) / (steps * 6);
+      g.lineStyle(Math.max(2, Math.min(w, h) / (steps * 6)), 0x14304a, 0.055 * (1 - t) ** 1.5);
       g.strokeRect(inset, inset, w - inset * 2, h - inset * 2);
     }
 
@@ -211,60 +187,165 @@ export class Background {
     g.clear();
   }
 
+  /** Bright sky, hazing out toward the horizon band. */
+  private drawSky(
+    g: Phaser.GameObjects.Graphics,
+    w: number,
+    h: number,
+    horizon: number,
+  ): void {
+    const skyTop = Phaser.Display.Color.IntegerToColor(COLORS.skyTop);
+    const skyLow = Phaser.Display.Color.IntegerToColor(COLORS.skyHorizon);
+    const bands = 26;
+    const skyBottom = Math.max(horizon, h * 0.35);
+    for (let i = 0; i < bands; i++) {
+      const t = i / (bands - 1);
+      const c = Phaser.Display.Color.Interpolate.ColorWithColor(skyTop, skyLow, 1, t);
+      g.fillStyle(Phaser.Display.Color.GetColor(c.r, c.g, c.b), 1);
+      g.fillRect(0, (skyBottom * i) / bands, w, skyBottom / bands + 1);
+    }
+    // Below the horizon the sky is replaced by the deck, but the gutters on a
+    // wide screen still need something: keep the horizon colour going down.
+    g.fillStyle(COLORS.skyHorizon, 1);
+    g.fillRect(0, skyBottom - 1, w, h - skyBottom + 2);
+  }
+
   /**
-   * Building silhouettes in the void either side of the bridge.
+   * The city the bridge runs into.
    *
    * Deterministic by design - a fixed hash rather than the run RNG - so a
    * resize rebuilds the exact same skyline instead of reshuffling the city
    * when the player turns their phone.
    */
-  private drawSkyline(
+  private drawCity(
     g: Phaser.GameObjects.Graphics,
     v: Viewport,
     w: number,
-    h: number,
+    horizon: number,
   ): void {
-    const horizonBand = (ARMY_BASE_Y - 120 - v.visibleTop) * v.zoom;
     let seed = 0x5eed;
     const rand = () => {
-      // xorshift: stable, no allocation, no dependency on the run's RNG.
       seed ^= seed << 13;
       seed ^= seed >>> 17;
       seed ^= seed << 5;
       return ((seed >>> 0) % 10000) / 10000;
     };
 
-    for (const side of [-1, 1] as const) {
-      const edge = side < 0 ? v.fieldLeft : v.fieldRight;
-      let y = -20;
+    // Two ranks: a pale far rank, then a nearer, darker one.
+    // Three ranks, back to front: each is darker and taller than the one
+    // behind it, which is what reads as a city rather than a grey band.
+    for (const rank of [0, 1, 2]) {
+      const base = horizon + rank * 40;
+      const alpha = [0.28, 0.45, 0.62][rank];
+      const colour = [0x9ab4cc, 0x7593b2, COLORS.city][rank];
+      const heightScale = [0.7, 0.95, 1.25][rank];
+      let x = -40;
       let guard = 0;
-      while (y < horizonBand && guard++ < 90) {
-        const worldY = v.visibleTop + y / v.zoom;
-        const edgeX = (v.projectX(edge, worldY) - v.visibleLeft) * v.zoom;
-        const depth = 1 - y / Math.max(1, horizonBand);
-
-        const bw = (14 + rand() * 34) * (0.5 + 0.5 * (1 - depth));
-        const bh = (26 + rand() * 92) * (0.45 + 0.55 * (1 - depth));
-        const gap = 6 + rand() * 26;
-        const x = side < 0 ? edgeX - bw - 6 : edgeX + 6;
-
-        if (x + bw > 0 && x < w) {
-          const shade = 0.05 + rand() * 0.05 + depth * 0.05;
-          g.fillStyle(0x8fa6c4, shade);
-          g.fillRect(x, y, bw, bh);
-          g.fillStyle(0x0a0e16, 0.35);
-          g.fillRect(x, y, bw, 2);
-          // A couple of lit windows so the block is not a flat slab.
-          const windows = 1 + Math.floor(rand() * 3);
-          for (let k = 0; k < windows; k++) {
-            g.fillStyle(0xffc46a, 0.16 + rand() * 0.16);
-            g.fillRect(x + 3 + rand() * Math.max(1, bw - 8), y + 6 + rand() * Math.max(1, bh - 12), 3, 2);
+      while (x < w + 40 && guard++ < 140) {
+        const bw = 26 + rand() * 74;
+        const bh = (70 + rand() * 240) * heightScale;
+        g.fillStyle(colour, alpha);
+        g.fillRect(x, base - bh, bw, bh);
+        // Lit crown so the tower tops separate from the sky.
+        g.fillStyle(0xd4e4f2, alpha * 0.4);
+        g.fillRect(x, base - bh, bw, 3);
+        if (rank >= 1 && bw > 34) {
+          g.fillStyle(0x36506e, alpha * 0.45);
+          for (let wy = base - bh + 12; wy < base - 10; wy += 18) {
+            g.fillRect(x + 6, wy, bw - 12, 5);
           }
         }
-        y += bh * 0.42 + gap;
+        x += bw + 2 + rand() * 10;
       }
     }
-    void h;
+    void v;
+  }
+
+  /**
+   * Steel truss along both outer edges and down the middle of the bridge.
+   *
+   * The truss is the single most recognisable thing about the reference
+   * silhouette, so it gets real structure: a bottom chord, a top chord and
+   * diagonal web members, all converging with the road.
+   */
+  private drawTruss(
+    g: Phaser.GameObjects.Graphics,
+    v: Viewport,
+    top: number,
+    bottom: number,
+  ): void {
+    const quad = (xl: number, xr: number, yt: number, yb: number) => {
+      g.fillPoints(
+        [
+          new Phaser.Geom.Point(v.projectX(xl, yt), yt),
+          new Phaser.Geom.Point(v.projectX(xr, yt), yt),
+          new Phaser.Geom.Point(v.projectX(xr, yb), yb),
+          new Phaser.Geom.Point(v.projectX(xl, yb), yb),
+        ],
+        true,
+      );
+    };
+    // Bake in *world* space here, then convert: the caller's px/py closure is
+    // canvas space, and the truss is easier to reason about on the road.
+    const toCanvas = (worldX: number, worldY: number): [number, number] => [
+      (v.projectX(worldX, worldY) - v.visibleLeft) * v.zoom,
+      (worldY - v.visibleTop) * v.zoom,
+    ];
+    void quad;
+
+    for (const edge of [v.fieldLeft, v.fieldRight]) {
+      const inward = edge === v.fieldLeft ? 1 : -1;
+
+      // Bottom chord (the kerb wall) and top chord (the handrail).
+      const chord = (offset: number, height: number, colour: number, alpha: number) => {
+        g.fillStyle(colour, alpha);
+        const pts: Phaser.Geom.Point[] = [];
+        const steps = 12;
+        for (let i = 0; i <= steps; i++) {
+          const y = top + ((bottom - top) * i) / steps;
+          const d = v.depthScale(y);
+          const [cx, cy] = toCanvas(edge + inward * offset * d, y);
+          pts.push(new Phaser.Geom.Point(cx, cy - height * d * v.zoom));
+        }
+        for (let i = steps; i >= 0; i--) {
+          const y = top + ((bottom - top) * i) / steps;
+          const d = v.depthScale(y);
+          const [cx, cy] = toCanvas(edge + inward * offset * d, y);
+          pts.push(new Phaser.Geom.Point(cx, cy - (height - 9) * d * v.zoom));
+        }
+        g.fillPoints(pts, true);
+      };
+
+      // Solid parapet, then the open truss above it.
+      chord(6, 9, COLORS.steelDark, 0.95);
+      chord(6, 34, COLORS.steel, 0.9);
+      chord(6, 62, COLORS.steelLit, 0.8);
+    }
+
+    // Central barrier between the lanes: a low solid wall plus a rail.
+    g.fillStyle(COLORS.steelDark, 0.95);
+    const wall = (offset: number, height: number) => {
+      const pts: Phaser.Geom.Point[] = [];
+      const steps = 12;
+      for (let i = 0; i <= steps; i++) {
+        const y = top + ((bottom - top) * i) / steps;
+        const d = v.depthScale(y);
+        const [cx, cy] = toCanvas(v.dividerX + offset * d, y);
+        pts.push(new Phaser.Geom.Point(cx, cy - height * d * v.zoom));
+      }
+      for (let i = steps; i >= 0; i--) {
+        const y = top + ((bottom - top) * i) / steps;
+        const d = v.depthScale(y);
+        const [cx, cy] = toCanvas(v.dividerX - offset * d, y);
+        pts.push(new Phaser.Geom.Point(cx, cy));
+      }
+      g.fillPoints(pts, true);
+    };
+    wall(15, 16);
+    g.fillStyle(COLORS.steel, 0.95);
+    wall(11, 30);
+    g.fillStyle(COLORS.steelLit, 0.9);
+    wall(7, 44);
   }
 
   /* ------------------------------------------------------------- moving -- */
@@ -276,49 +357,62 @@ export class Background {
     const top = v.visibleTop - 30;
     const bottom = v.visibleBottom + 120;
 
-    // Railing posts. Spacing shrinks with distance, so they bunch up toward
+    // Truss uprights. Spacing shrinks with distance, so they bunch up toward
     // the vanishing point the way real posts do.
     const postPhase = this.scroll % POST_SPACING;
     for (const edge of [v.fieldLeft, v.fieldRight]) {
+      const inward = edge === v.fieldLeft ? 1 : -1;
       let y = bottom - postPhase;
       let guard = 0;
-      while (y > top && guard++ < 64) {
+      while (y > top && guard++ < 70) {
         const d = v.depthScale(y);
-        const x = v.projectX(edge, y);
-        const pw = 15 * d;
-        const ph = 26 * d;
-        g.fillStyle(0x5c6b82, 0.9);
-        g.fillRect(x - pw / 2, y - ph, pw, ph);
-        g.fillStyle(0x9fb2cc, 0.55);
-        g.fillRect(x - pw / 2, y - ph, pw, 3 * d);
+        const x = v.projectX(edge + inward * 6 * d, y);
+        g.fillStyle(COLORS.steelDark, 0.95);
+        g.fillRect(x - 4 * d, y - 62 * d, 8 * d, 62 * d);
+        g.fillStyle(COLORS.steelLit, 0.6);
+        g.fillRect(x - 4 * d, y - 62 * d, 3 * d, 62 * d);
         y -= POST_SPACING * d;
       }
     }
 
-    // Divider dashes.
-    const dashPhase = this.scroll % DASH_SPACING;
-    let dy = bottom - dashPhase;
-    let dashGuard = 0;
-    while (dy > top && dashGuard++ < 48) {
-      const d = v.depthScale(dy);
-      const x = v.projectX(v.dividerX, dy);
-      g.fillStyle(0xd7b45a, 0.45);
-      g.fillRect(x - 3 * d, dy - DASH_LENGTH * d, 6 * d, DASH_LENGTH * d);
-      dy -= DASH_SPACING * d;
+    // Posts down the central barrier.
+    const dividerPhase = this.scroll % (POST_SPACING * 1.4);
+    let py2 = bottom - dividerPhase;
+    let dividerGuard = 0;
+    while (py2 > top && dividerGuard++ < 50) {
+      const d = v.depthScale(py2);
+      const x = v.projectX(v.dividerX, py2);
+      g.fillStyle(COLORS.steelDark, 0.95);
+      g.fillRect(x - 4 * d, py2 - 44 * d, 8 * d, 44 * d);
+      py2 -= POST_SPACING * 1.4 * d;
     }
 
-    // Expansion seams across the deck - the main cue that the world moves.
+    // White lane markings down the middle of each lane.
+    const markPhase = this.scroll % MARKING_SPACING;
+    for (const laneCentre of [v.supplyLaneCenterX, v.combatLaneCenterX]) {
+      let y = bottom - markPhase;
+      let guard = 0;
+      while (y > top && guard++ < 40) {
+        const d = v.depthScale(y);
+        const x = v.projectX(laneCentre, y);
+        g.fillStyle(0xf0f0ea, 0.5);
+        g.fillRect(x - 4 * d, y - MARKING_LENGTH * d, 8 * d, MARKING_LENGTH * d);
+        y -= MARKING_SPACING * d;
+      }
+    }
+
+    // Expansion joints across the deck - the main cue that the world moves.
     const seamPhase = this.scroll % SEAM_SPACING;
     let sy = bottom - seamPhase;
     let seamGuard = 0;
-    while (sy > top && seamGuard++ < 32) {
+    while (sy > top && seamGuard++ < 26) {
       const d = v.depthScale(sy);
       const lx = v.projectX(v.fieldLeft, sy);
       const rx = v.projectX(v.fieldRight, sy);
-      g.fillStyle(0x0a0e15, 0.45);
-      g.fillRect(lx, sy - 4 * d, rx - lx, 4 * d);
-      g.fillStyle(0x7d8ca3, 0.14);
-      g.fillRect(lx, sy - 6 * d, rx - lx, 2 * d);
+      g.fillStyle(0x6a7078, 0.4);
+      g.fillRect(lx, sy - 5 * d, rx - lx, 5 * d);
+      g.fillStyle(0xd8dcd6, 0.25);
+      g.fillRect(lx, sy - 8 * d, rx - lx, 3 * d);
       sy -= SEAM_SPACING * d;
     }
   }

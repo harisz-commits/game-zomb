@@ -4,6 +4,7 @@ import { FAMILY_COLORS, FONT_FAMILY } from '../config/GameConfig';
 import type { BattleContext } from '../core/BattleContext';
 import { GameEvent } from '../core/EventBus';
 import { UPGRADE_FAMILIES } from '../types/game';
+import { TEX } from '../render/TextureFactory';
 import { formatCompact, formatTime } from '../utils/MathUtils';
 
 const PAD = 16;
@@ -26,6 +27,9 @@ export class BattleHUD {
   private readonly promoBarBg: Phaser.GameObjects.Rectangle;
   private readonly promoBarFill: Phaser.GameObjects.Rectangle;
   private readonly doctrineText: Phaser.GameObjects.Text;
+  /** Current weapon, with its glyph - the upgrade the player should feel. */
+  private readonly weaponIcon: Phaser.GameObjects.Image;
+  private readonly weaponText: Phaser.GameObjects.Text;
   private readonly hintText: Phaser.GameObjects.Text;
   private readonly bannerText: Phaser.GameObjects.Text;
 
@@ -36,6 +40,7 @@ export class BattleHUD {
   private hintTimer = 0;
   private bannerTimer = 0;
   private lastArmyCount = -1;
+  private shownWeapon = -1;
 
   constructor(private readonly ctx: BattleContext) {
     const scene = ctx.scene;
@@ -75,6 +80,16 @@ export class BattleHUD {
     this.doctrineText = scene.add
       .text(0, 0, '', { fontFamily: FONT_FAMILY, fontSize: '12px', color: '#8a99b3', fontStyle: 'bold' })
       .setOrigin(1, 0);
+
+    this.weaponIcon = scene.add.image(0, 0, TEX.weaponIcon(0)).setOrigin(0, 0.5).setScale(0.42);
+    this.weaponText = scene.add
+      .text(0, 0, '', {
+        fontFamily: FONT_FAMILY,
+        fontSize: '13px',
+        color: '#7dff8f',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0, 0.5);
 
     this.bossBarBg = scene.add.rectangle(0, 0, 200, 9, 0x2a1620).setOrigin(0.5, 0).setVisible(false);
     this.bossBarFill = scene.add
@@ -118,6 +133,8 @@ export class BattleHUD {
       this.promoBarFill,
       this.promoText,
       this.doctrineText,
+      this.weaponIcon,
+      this.weaponText,
       this.bossBarBg,
       this.bossBarFill,
       this.bossNameText,
@@ -148,6 +165,8 @@ export class BattleHUD {
     this.promoBarBg.setPosition(PAD + 2, top + 60).setSize(Math.min(150, width * 0.34), 6);
     this.promoBarFill.setPosition(PAD + 2, top + 60).setSize(0, 6);
     this.promoText.setPosition(PAD + 2, top + 68);
+    this.weaponIcon.setPosition(PAD, top + 96);
+    this.weaponText.setPosition(PAD + 40, top + 96);
 
     this.timerText.setPosition(width / 2, top + 2).setFontSize(width < 380 ? 20 : 24);
     this.phaseText.setPosition(width / 2, top + 30);
@@ -198,6 +217,20 @@ export class BattleHUD {
     this.phaseText.setText(ctx.director.phase.label);
 
     this.scoreText.setText(formatCompact(ctx.score.score));
+
+    const weapon = ctx.upgrades.weaponIndex;
+    if (weapon !== this.shownWeapon) {
+      this.shownWeapon = weapon;
+      this.weaponIcon.setTexture(TEX.weaponIcon(weapon));
+      this.weaponText.setText(ctx.upgrades.weapon.name);
+      this.weaponIcon.setScale(0.62);
+      ctx.scene.tweens.add({
+        targets: this.weaponIcon,
+        scale: 0.42,
+        duration: 240,
+        ease: 'Back.easeOut',
+      });
+    }
     this.updateDoctrines();
     this.updateBossBar();
 

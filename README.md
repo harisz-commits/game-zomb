@@ -220,6 +220,42 @@ Campaign timeline and endless modifiers: `src/data/waveDefinitions.ts`.
 
 ## How to extend
 
+### Weapon ladder
+
+`src/data/weaponTiers.ts` holds six weapons, from RIFLE to MINIGUN. A weapon
+crate advances the ladder, and the point of it is that the upgrade is
+**visible**: the gun in every soldier's hands is a different silhouette, the
+crate that grants it shows the gun you are about to get as a neon glyph, the
+tracers get fatter and hotter, and the HUD carries the weapon's name. The power
+lives on the tier itself (damage and rate of fire multipliers folded into
+`ModifierState`), so the two ladders - more soldiers, better guns - are
+independent and both matter.
+
+Soldier sprites are the cross product of soldier tier and weapon tier, so they
+are generated lazily by `ensureSoldierTexture`: a run only ever shows a handful
+of the combinations.
+
+### Difficulty scaling
+
+Two terms decide how hard the horde is, and the second one matters more:
+
+```
+hp     = (1 + t / 55) ^ 1.34  *  tierPower ^ 0.86
+damage =                         tierPower ^ 0.86
+```
+
+A soldier's damage *and* HP are proportional to tier power, so without the
+`tierPower` terms the horde stopped mattering the moment the promotion ladder
+got going - an army that had promoted eight times hit 256x harder than the
+enemies it was shooting, and a zombie that reached the line could no longer
+kill anyone. The run played itself. The exponent is deliberately below 1, so a
+promotion is still a real gain (`tierPower ^ 0.14` net, plus the army regrowing
+to the threshold afterwards) - it just is not a free win.
+
+Verified with scripted playthroughs: a run where the player never moves the
+formation dies at ~26s, and a played run finishes the 5-minute campaign at
+roughly 90-130 of 140 soldiers with the horde at its entity cap.
+
 ### Perspective
 
 The battlefield is drawn as a receding plane. `Viewport` owns the projection
@@ -240,17 +276,25 @@ Because a soldier and its target are projected the same way, a soldier firing
 "straight ahead" draws a converging line - which is what a line running away
 from the camera looks like in perspective.
 
+The scene is a *daylight* one: bright hazy sky, a city skyline, pale concrete
+deck, dark steel truss. Units are saturated shapes drawn against that light
+ground, which is what keeps a 180-strong horde readable with no outline pass.
+
 Depth is sold by four cheap things, in order of how much they buy:
 
 1. **Scale.** Every unit is drawn at `baseScale * depthScale(y)`.
-2. **Haze.** Distant units fade toward a haze tint (`applyHaze`, written in
-   quantised steps so a walking zombie is not re-tinted every frame), and the
-   deck fades into the same colour.
+2. **Haze.** Distant units wash out toward the sky colour and lose opacity
+   (`applyHaze`, written in quantised steps so a walking zombie is not
+   re-tinted every frame), and the deck fades into the same colour. On a light
+   ground, far away means washed out - darkening would be exactly wrong.
 3. **Contact shadows**, baked into the bottom of every unit sprite rather than
    drawn as separate objects - 150 fewer quads a frame, and a quality drop can
    never leave the horde floating.
-4. **Converging scenery**: railing posts and road seams whose spacing shrinks
-   with distance, plus a baked skyline in the wedges either side of the bridge.
+4. **Converging scenery**: truss uprights, lane markings and expansion joints
+   whose spacing shrinks with distance, plus a baked three-rank city skyline in
+   the wedges either side of the bridge. `HORIZON_Y` is close enough that the
+   deck narrows to about a third of its width by the top of the field, which is
+   what opens those wedges up in the first place.
 
 `Background` bakes all of the static scene - sky, deck shading, lane washes,
 railings, divider, haze, skyline, vignette - into a **render texture at canvas

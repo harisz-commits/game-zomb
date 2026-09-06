@@ -4,7 +4,7 @@ import { ARMY_BASE_Y, COLORS, ENTITY_LIMITS, FIELD_PADDING_X } from '../config/G
 import type { BattleContext } from '../core/BattleContext';
 import { GameEvent } from '../core/EventBus';
 import { Soldier } from '../entities/Soldier';
-import { TEX } from '../render/TextureFactory';
+import { TEX, ensureSoldierTexture } from '../render/TextureFactory';
 import type { SoldierTier } from '../types/game';
 import { clamp, damp, distributeRows } from '../utils/MathUtils';
 
@@ -40,7 +40,9 @@ export class ArmySystem {
   private guardianReady = false;
 
   private tier!: SoldierTier;
-  private tierTexture = TEX.soldier(0);
+  private tierTexture = TEX.soldier(0, 0);
+  /** Weapon level the sprites are currently drawn with. */
+  private shownWeapon = -1;
 
   /** Cached layout so we only rebuild slots when the count/width changes. */
   private layoutCount = -1;
@@ -52,7 +54,7 @@ export class ArmySystem {
 
   create(): void {
     this.tier = this.ctx.promotion.currentTier;
-    this.tierTexture = TEX.soldier(this.tier.visual);
+    this.refreshTexture();
 
     this.centerX = this.ctx.viewport.centerX;
     this.targetX = this.centerX;
@@ -203,6 +205,30 @@ export class ArmySystem {
     return soldier;
   }
 
+  /**
+   * How large a single soldier is drawn.
+   *
+   * A three-man squad should fill the lane the way it does in a real firefight;
+   * a 140-strong block cannot, or it would be a solid wall of pixels. So the
+   * sprite scale slides from big to compact as the army grows - the *block*
+   * keeps roughly the same visual weight either way.
+   */
+  private get unitScale(): number {
+    return clamp(1.85 - this.soldiers.length / 130, 0.7, 1.85);
+  }
+
+  /** Re-points the sprites at the current tier + weapon combination. */
+  private refreshTexture(): void {
+    const weapon = this.ctx.upgrades.weaponIndex;
+    this.tierTexture = ensureSoldierTexture(this.ctx.scene, this.tier.visual, weapon);
+    this.shownWeapon = weapon;
+    for (const soldier of this.soldiers) {
+      soldier.sprite.setTexture(this.tierTexture);
+      if (this.tier.prestige > 0) soldier.sprite.setTint(this.tier.accentColor);
+      else soldier.sprite.clearTint();
+    }
+  }
+
   private obtainSprite(): Phaser.GameObjects.Image {
     const recycled = this.spritePool.pop();
     if (recycled) return recycled;
@@ -330,7 +356,12 @@ export class ArmySystem {
   /** Rebuilds the army at a new tier with the converted count. */
   applyPromotion(tier: SoldierTier, newCount: number): void {
     this.tier = tier;
-    this.tierTexture = TEX.soldier(tier.visual);
+    this.tierTexture = ensureSoldierTexture(
+      this.ctx.scene,
+      tier.visual,
+      this.ctx.upgrades.weaponIndex,
+    );
+    this.shownWeapon = this.ctx.upgrades.weaponIndex;
 
     const target = clamp(newCount, 1, SPRITE_CAPACITY);
     while (this.soldiers.length > target) this.releaseSoldier(this.soldiers.length - 1);
@@ -380,9 +411,14 @@ export class ArmySystem {
 
     this.layout(false);
 
+    // A weapon crate changes the gun in every soldier's hands - that is the
+    // whole point of the weapon ladder, so it must land on the same frame.
+    if (this.ctx.upgrades.weaponIndex !== this.shownWeapon) this.refreshTexture();
+
     const mods = this.ctx.upgrades.modifiers;
     const regen = mods.regenPerSecond;
     const maxHp = this.soldierMaxHp;
+    const unitScale = this.unitScale;
 
     for (const soldier of this.soldiers) {
       if (soldier.spawnT < 1) {
@@ -404,7 +440,7 @@ export class ArmySystem {
       // Subtle idle bob keeps the formation alive without extra objects.
       sprite.y = soldier.y + Math.sin(soldier.phase + this.ctx.runtime.elapsed * 4) * 0.8;
       sprite.setAlpha(eased);
-      sprite.setScale((0.55 + eased * 0.45) * depth);
+      sprite.setScale((0.55 + eased * 0.45) * depth * unitScale);
 
       if (soldier.flash > 0) {
         soldier.flash -= dt;
@@ -518,7 +554,14 @@ export class ArmySystem {
     const columns = clamp(Math.round(Math.sqrt(count * 1.7)), 3, 22);
     const rows = Math.max(1, Math.ceil(count / columns));
     const rowCounts = distributeRows(count, rows);
-    const spacing = Math.min(BALANCE.FORMATION_COL_SPACING, availableWidth / columns);
+    // Spacing tracks the sprite scale: a small squad is drawn big, and without
+    // this its soldiers would pile into one unreadable blob.
+    const scale = this.unitScale;
+    const spacing = Math.min(
+      BALANCE.FORMATION_COL_SPACING * scale,
+      availableWidth / columns,
+    );
+    const rowSpacing = BALANCE.FORMATION_ROW_SPACING * scale;
 
     let index = 0;
     let widest = 0;
@@ -528,7 +571,7 @@ export class ArmySystem {
       const rowWidth = (inRow - 1) * spacing;
       widest = Math.max(widest, rowWidth);
       const startOffset = -rowWidth / 2;
-      const rowY = ARMY_BASE_Y + row * BALANCE.FORMATION_ROW_SPACING;
+      const rowY = ARMY_BASE_Y + row * rowSpacing;
       // Stagger every other row by half a step for an organic block.
       const stagger = row % 2 === 1 ? spacing * 0.25 : 0;
 

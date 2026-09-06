@@ -7,7 +7,7 @@
 
 export const BALANCE = {
   // ---------------------------------------------------------------- army ---
-  STARTING_SOLDIERS: 10,
+  STARTING_SOLDIERS: 6,
   /** Army size that triggers a promotion. */
   PROMOTION_THRESHOLD: 140,
   /** Never let `Early Promotion` style upgrades push it below this. */
@@ -29,7 +29,7 @@ export const BALANCE = {
    * of the field before it enters the kill zone, and lets more of it reach the
    * line - density and threat, without spawning more entities.
    */
-  BASE_RANGE: 520,
+  BASE_RANGE: 400,
 
   /** Formation follows the pointer with this smoothing (per second). */
   FORMATION_LERP: 9,
@@ -50,14 +50,14 @@ export const BALANCE = {
    * (see the spawn-budget fix in EnemySpawnSystem): army growth is
    * supply-limited, so this is effectively "kills per extra soldier".
    */
-  REINFORCEMENT_THRESHOLD_BASE: 2.4,
+  REINFORCEMENT_THRESHOLD_BASE: 7,
   /**
    * Threshold scales with tier power^exponent. Must be > 1 so each promotion
    * takes longer than the last: army DPS scales linearly with tier power, so
    * an exponent of exactly 1 would keep the interval flat forever and the
    * original 0.72 made every tier arrive *faster* than the one before.
    */
-  REINFORCEMENT_TIER_EXPONENT: 1.1,
+  REINFORCEMENT_TIER_EXPONENT: 1.35,
   /** Maximum reinforcements resolved per frame (avoids spawn spikes). */
   MAX_REINFORCEMENTS_PER_TICK: 6,
 
@@ -66,8 +66,8 @@ export const BALANCE = {
   SUPPLY_FIRST_AT: 2,
   /** Vertical gap between blocks in the stack. */
   LANE_BLOCK_GAP: 10,
-  LANE_BIG_BLOCK_HEIGHT: 150,
-  LANE_FILLER_BLOCK_HEIGHT: 78,
+  LANE_BIG_BLOCK_HEIGHT: 186,
+  LANE_FILLER_BLOCK_HEIGHT: 96,
   LANE_BLOCK_WIDTH_RATIO: 0.88,
   /** Filler blocks appended behind each weapon block. */
   LANE_FILLER_COUNT: [3, 6] as [number, number],
@@ -79,18 +79,33 @@ export const BALANCE = {
    * line and waits indefinitely; the stack only advances when you break one.
    * The pressure to leave the lane comes from the horde, not from a timer.
    */
-  LANE_STACK_FRONT_OFFSET: 210,
+  LANE_STACK_FRONT_OFFSET: 240,
   /** Blocks slide into their new slot at this rate after one is broken. */
   LANE_STACK_SLIDE: 9,
   /** Keep at least this many blocks queued up. */
   LANE_STACK_MIN: 9,
+  /**
+   * How far a zombie may drift from the centre of the combat lane, as a share
+   * of the lane width. Wide enough that the horde arrives as a wall filling
+   * the lane rather than a single column - and wide enough that a formation
+   * can never cover all of it at once, which is where the pressure comes from.
+   */
+  HORDE_SPREAD_RATIO: 0.36,
 
   LANE_BLOCK_BASE_HP: 90,
   LANE_BLOCK_TIME_SCALING: 0.014,
   /** Share of one second of full army DPS a weapon block should cost. */
   LANE_BLOCK_DPS_SECONDS: 1.15,
   /**
-   * What is frozen inside a big block. Weighted toward weapons - the "+1"
+   * Chance that a weapon crate hands out the *next gun* rather than a stat
+   * bonus, while there is still a better gun to find. High on purpose: the
+   * weapon ladder is the visible reward, and it is the only reason to point
+   * the formation away from the horde.
+   */
+  LANE_WEAPON_CHANCE: 0.72,
+
+  /**
+   * What is frozen inside a big block when it is not a weapon. The "+1"
    * filler blocks are what hand out single soldiers.
    */
   LANE_REWARDS: [
@@ -107,11 +122,19 @@ export const BALANCE = {
    * penalty; shooting it counts that number down toward zero, so partial
    * suppression always pays off. Whatever is left is what it costs you.
    */
-  BARRIER_FIRST_AT: 26,
-  BARRIER_INTERVAL: [22, 34] as [number, number],
-  BARRIER_HEIGHT: 84,
+  BARRIER_FIRST_AT: 32,
+  BARRIER_INTERVAL: [17, 26] as [number, number],
+  BARRIER_HEIGHT: 104,
   BARRIER_WIDTH_RATIO: 0.92,
-  BARRIER_PENALTY: [8, 20] as [number, number],
+  /**
+   * Soldiers a barrier costs, ramped over the run. The first one has to be a
+   * lesson, not an execution: at t=0 it takes a handful, by the end it takes a
+   * bite out of a full company.
+   */
+  BARRIER_PENALTY: [5, 9] as [number, number],
+  BARRIER_PENALTY_LATE: [20, 38] as [number, number],
+  /** Seconds over which the barrier penalty ramps to its late value. */
+  BARRIER_PENALTY_RAMP: 210,
   /** Total HP of a barrier, expressed in seconds of full army DPS. */
   BARRIER_DPS_SECONDS: 1.1,
   BARRIER_MIN_HP: 120,
@@ -184,13 +207,24 @@ export const BALANCE = {
 
   // ------------------------------------------------------------- enemies ---
   /** Global HP scaling: hp * (1 + t/HP_SCALING_TIME) ^ HP_SCALING_POWER. */
-  ZOMBIE_HP_SCALING_TIME: 62,
-  ZOMBIE_HP_SCALING_POWER: 1.16,
+  ZOMBIE_HP_SCALING_TIME: 55,
+  ZOMBIE_HP_SCALING_POWER: 1.34,
+  /**
+   * Enemy HP also scales with the army's tier power. Below 1 so a promotion
+   * still nets a gain; see EnemyDirector.getHpMultiplier for why it exists.
+   */
+  ZOMBIE_HP_TIER_EXPONENT: 0.86,
   ZOMBIE_SPEED_SCALING: 0.055,
-  ZOMBIE_SPEED_SCALING_CAP: 0.55,
+  ZOMBIE_SPEED_SCALING_CAP: 0.8,
   ELITE_HP_MULT: 3.4,
   ELITE_DAMAGE_MULT: 1.7,
   ELITE_SCALE: 1.28,
+  /**
+   * Global multiplier on how large enemies are drawn. The horde has to have
+   * physical presence at the far end of a hard perspective taper, where the
+   * depth scale alone would shrink it into confetti.
+   */
+  ENEMY_VISUAL_SCALE: 1.35,
   ELITE_POINTS: 8,
   ELITE_SCORE: 50,
   SWARM_PACK_SIZE: [4, 7] as [number, number],
@@ -205,16 +239,16 @@ export const BALANCE = {
    * hotter than a full-width battlefield would need in order to keep the lane
    * looking packed.
    */
-  BASE_SPAWN_RATE: 2.1,
+  BASE_SPAWN_RATE: 3.4,
   /** Spawn budget grows linearly with this factor per second. */
-  DIFFICULTY_SCALING: 0.021,
+  DIFFICULTY_SCALING: 0.032,
   /** Extra difficulty from a strong build - deliberately gentle. */
-  POWER_SCALING: 0.16,
-  POWER_SCALING_CAP: 0.85,
-  SPAWN_RATE_CAP: 13,
-  MAX_ZOMBIES: 150,
+  POWER_SCALING: 0.3,
+  POWER_SCALING_CAP: 2.6,
+  SPAWN_RATE_CAP: 46,
+  MAX_ZOMBIES: 180,
   /** Hard cap on simultaneous spawns in one director tick. */
-  SPAWN_BURST_CAP: 8,
+  SPAWN_BURST_CAP: 12,
 
   // ----------------------------------------------------------------- run ---
   RUN_DURATION: 300,

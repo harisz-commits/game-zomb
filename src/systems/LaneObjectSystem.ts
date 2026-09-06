@@ -4,17 +4,18 @@ import type { BattleContext } from '../core/BattleContext';
 import { GameEvent } from '../core/EventBus';
 import { LaneObject, type Lane, type LaneReward } from '../entities/LaneObject';
 import { TEX } from '../render/TextureFactory';
-import { clamp, damp, formatCompact, mixColor } from '../utils/MathUtils';
+import { MAX_WEAPON_LEVEL } from '../data/weaponTiers';
+import { clamp, damp, formatCompact, lerp, mixColor } from '../utils/MathUtils';
 import { ObjectPool } from '../utils/ObjectPool';
 import { audio } from './AudioSystem';
 
 const MAX_LANE_OBJECTS = 26;
-const FLASH_DURATION = 0.05;
+const FLASH_DURATION = 0.035;
 // Without a cooldown the crate under sustained fire re-arms its flash every
 // frame and renders as a solid white block instead of ice.
-const FLASH_COOLDOWN = 0.16;
+const FLASH_COOLDOWN = 0.26;
 /** Matches the haze the horde fades into, so both lanes recede together. */
-const HAZE_TINT = 0x3b4759;
+const HAZE_TINT = 0xb9cddd;
 const HAZE_STEPS = 10;
 
 /**
@@ -60,7 +61,7 @@ export class LaneObjectSystem {
     const item = new LaneObject();
     item.sprite = scene.add.image(0, 0, TEX.ice).setVisible(false).setDepth(28);
     item.icon = scene.add
-      .text(0, 0, '', { fontFamily: FONT_FAMILY, fontSize: '26px', color: '#eaf6ff' })
+      .image(0, 0, TEX.weaponIcon(0))
       .setOrigin(0.5)
       .setVisible(false)
       .setDepth(29);
@@ -141,7 +142,7 @@ export class LaneObjectSystem {
 
     this.ctx.effects.impact(x, y, 0x9fe3ff, 9);
     this.ctx.effects.explosion(x, y, item.width * 0.5, 0x6fd6ff);
-    if (item.reward) this.grantReward(item.reward, x, y);
+    if (item.reward) this.grantReward(item.reward, x, y, item.width * 0.5);
     audio.play('reinforce', 0.7);
 
     const index = this.stack.indexOf(item);
@@ -150,9 +151,21 @@ export class LaneObjectSystem {
     this.relayoutStack();
   }
 
-  private grantReward(reward: LaneReward, x: number, y: number): void {
+  private grantReward(reward: LaneReward, x: number, y: number, item_glow_radius = 90): void {
     const effects = this.ctx.effects;
     switch (reward.type) {
+      case 'WEAPON': {
+        const weapon = this.ctx.upgrades.upgradeWeapon();
+        if (weapon) {
+          effects.floatingText(x, y - 30, weapon.name, '#7dff8f', 34);
+          this.ctx.effects.explosion(x, y, item_glow_radius, 0x7dff8f);
+        } else {
+          // Already at the top of the ladder - pay out as raw firepower.
+          this.ctx.upgrades.addBonus({ damageMultiplier: 1.15 });
+          effects.floatingText(x, y - 30, 'DAMAGE +15%', '#ff8a4c', 30);
+        }
+        break;
+      }
       case 'SOLDIERS': {
         const amount = Math.max(
           1,
@@ -221,7 +234,7 @@ export class LaneObjectSystem {
       const depth = viewport.depthScale(item.y);
       const px = viewport.projectX(item.x, item.y);
       item.sprite.setPosition(px, item.y).setDisplaySize(item.width * depth, item.height);
-      item.icon.setPosition(px, item.y - item.height * 0.28).setScale(depth);
+      item.icon.setPosition(px, item.y - item.height * 0.26).setScale(item.iconScale * depth);
       item.label.setPosition(px, item.y + item.height * 0.1).setScale(depth);
 
       // Re-rasterising a Text object is expensive: only write when it changes.
@@ -252,7 +265,7 @@ export class LaneObjectSystem {
     const step = Math.round(this.ctx.viewport.fogAlpha(item.y) * HAZE_STEPS);
     if (!force && step === item.fogStep) return;
     item.fogStep = step;
-    item.sprite.setTint(mixColor(0xffffff, HAZE_TINT, step / HAZE_STEPS));
+    item.sprite.setTint(mixColor(0xffffff, HAZE_TINT, (step / HAZE_STEPS) * 0.75));
   }
 
   /** Soldiers this barrier still costs. Counts down as you shoot it. */
@@ -341,6 +354,11 @@ export class LaneObjectSystem {
   }
 
   private rollReward(): LaneReward {
+    // While there is still a better gun to find, most weapon crates hand one
+    // out - the visible ladder is the reason to leave the horde alone at all.
+    if (!this.ctx.upgrades.weaponMaxed && this.ctx.rng.next() < BALANCE.LANE_WEAPON_CHANCE) {
+      return { type: 'WEAPON' };
+    }
     const row = this.ctx.rng.weighted(BALANCE.LANE_REWARDS, (r) => r.weight);
     const pick = row ?? BALANCE.LANE_REWARDS[0];
     switch (pick.kind) {
@@ -389,10 +407,11 @@ export class LaneObjectSystem {
       .setPosition(item.x, item.y)
       .setAlpha(1)
       .clearTint();
+    const bigCrate = height > 100;
     item.icon
-      .setVisible(true)
-      .setText(rewardIcon(reward))
-      .setFontSize(height > 100 ? 34 : 20);
+      .setVisible(bigCrate)
+      .setTexture(TEX.weaponIcon(iconWeaponLevel(reward, this.ctx.upgrades.weaponIndex)));
+    item.iconScale = (width * 0.62) / 84;
     item.label
       .setVisible(true)
       .setFontSize(height > 100 ? 46 : 26)
@@ -434,11 +453,10 @@ export class LaneObjectSystem {
     item.hp = hp;
     item.maxHp = hp;
     item.reward = null;
-    item.penalty = clamp(
-      Math.round(this.ctx.rng.range(BALANCE.BARRIER_PENALTY[0], BALANCE.BARRIER_PENALTY[1])),
-      1,
-      99,
-    );
+    const ramp = clamp(runtime.elapsed / BALANCE.BARRIER_PENALTY_RAMP, 0, 1);
+    const low = lerp(BALANCE.BARRIER_PENALTY[0], BALANCE.BARRIER_PENALTY_LATE[0], ramp);
+    const high = lerp(BALANCE.BARRIER_PENALTY[1], BALANCE.BARRIER_PENALTY_LATE[1], ramp);
+    item.penalty = clamp(Math.round(this.ctx.rng.range(low, high)), 1, 99);
     item.flash = 0;
     item.flashCooldown = 0;
     item.shownHp = -1;
@@ -487,17 +505,16 @@ export class LaneObjectSystem {
   }
 }
 
-function rewardIcon(reward: LaneReward): string {
-  switch (reward.type) {
-    case 'SOLDIERS':
-      return '⚑';
-    case 'DAMAGE':
-      return '▲';
-    case 'FIRE_RATE':
-      return '⚡';
-    case 'DOUBLE_POINTS':
-      return '★';
-  }
+/**
+ * Which gun to draw on a crate.
+ *
+ * A weapon crate shows the gun you are about to get, so the choice to break it
+ * is made on what you can see, not on a guess. Everything else borrows the
+ * current weapon's glyph as a generic "firepower" mark.
+ */
+function iconWeaponLevel(reward: LaneReward, current: number): number {
+  if (reward.type === 'WEAPON') return Math.min(current + 1, MAX_WEAPON_LEVEL);
+  return current;
 }
 
 export type { Lane };

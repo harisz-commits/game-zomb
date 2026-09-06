@@ -8,6 +8,8 @@ export type Lane = 'SUPPLY' | 'COMBAT';
  * dispatches it, so adding a reward type never touches the battle scene.
  */
 export type LaneReward =
+  /** The headline reward: the next gun, visible in every soldier's hands. */
+  | { type: 'WEAPON' }
   | { type: 'SOLDIERS'; amount: number }
   | { type: 'DAMAGE'; percent: number }
   | { type: 'FIRE_RATE'; percent: number }
@@ -29,7 +31,8 @@ export type LaneObjectKind = 'ICE' | 'BARRIER';
 export class LaneObject {
   sprite!: Phaser.GameObjects.Image;
   label!: Phaser.GameObjects.Text;
-  icon!: Phaser.GameObjects.Text;
+  /** Neon glyph of what is frozen inside. */
+  icon!: Phaser.GameObjects.Image;
 
   kind: LaneObjectKind = 'ICE';
   lane: Lane = 'SUPPLY';
@@ -60,6 +63,8 @@ export class LaneObject {
   targetY = 0;
   /** Quantised distance haze; -1 forces the next tint write. */
   fogStep = -1;
+  /** Base scale for the neon glyph, before perspective. */
+  iconScale = 1;
 
   get top(): number {
     return this.y - this.height / 2;

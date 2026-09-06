@@ -360,9 +360,19 @@ export class CombatSystem {
     // --- visuals (only a fraction of shots) ----------------------------
     const drawTracer = rng.next() < tracerFraction;
     if (drawTracer) {
-      const color = crit ? 0xffd166 : this.ctx.army.currentTier.muzzleColor;
-      this.ctx.effects.tracer(soldier.x, soldier.y - 8, target.x, target.y, color, crit ? 1.8 : 1);
-      this.ctx.effects.muzzle(soldier.x + 6, soldier.y - 14, this.ctx.army.currentTier.muzzleColor);
+      // Heavier weapons throw fatter, hotter tracers - the upgrade has to be
+      // visible in the air as well as in the soldiers' hands.
+      const weapon = this.ctx.upgrades.weapon;
+      const color = crit ? 0xffe28a : weapon.tracerColor;
+      this.ctx.effects.tracer(
+        soldier.x,
+        soldier.y - 8,
+        target.x,
+        target.y,
+        color,
+        weapon.tracerWidth * (crit ? 1.8 : 1),
+      );
+      this.ctx.effects.muzzle(soldier.x + 6, soldier.y - 16, weapon.tracerColor);
     }
 
     // --- resolve the hit(s) --------------------------------------------

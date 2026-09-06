@@ -67,24 +67,30 @@ export const ARMY_BASE_Y = FIELD_H - 250;
  * line running away from the camera looks like in perspective.
  */
 
-/** World y of the vanishing point. Far off-screen: a visible horizon would
- *  squeeze the spawn area into a few unreadable pixels. */
-export const HORIZON_Y = -1260;
+/**
+ * World y of the vanishing point.
+ *
+ * Kept off-screen - an on-screen horizon would squeeze the spawn area into a
+ * few unreadable pixels - but close enough that the deck narrows to about a
+ * third of its width by the top of the field. That hard taper is what opens up
+ * the sky and the city either side of the bridge.
+ */
+export const HORIZON_Y = -560;
 
 /** The row that renders at scale 1 - the army's front line. */
 export const DEPTH_ANCHOR_Y = ARMY_BASE_Y;
 
 /** Floor on the depth scale so distant enemies stay readable on small phones. */
-export const MIN_DEPTH_SCALE = 0.36;
+export const MIN_DEPTH_SCALE = 0.3;
 
 /** Distance above the army where the haze starts eating contrast. */
-export const FOG_START_Y = 260;
+export const FOG_START_Y = 300;
 /** Strongest haze alpha, reached at the top of the field. */
-export const FOG_MAX = 0.72;
+export const FOG_MAX = 0.6;
 
 export const ENTITY_LIMITS = {
   maxVisibleSoldiers: 140,
-  maxActiveZombies: 150,
+  maxActiveZombies: 180,
   maxVisualProjectiles: 80,
   maxDamageNumbers: 25,
   maxParticles: 150,
@@ -142,12 +148,33 @@ export const QUALITY_CONFIG = {
   recoverAboveFps: 57,
 } as const;
 
-/** Colour palette - stylised, no gore, readable on small screens. */
+/**
+ * Colour palette.
+ *
+ * The battlefield is a *daylight* scene: bright hazy sky, pale concrete deck,
+ * dark steel. Units are drawn as saturated shapes against that light ground,
+ * which is what keeps a 150-strong horde readable without any outline pass.
+ * The HUD stays on dark panels so it never competes with the bridge.
+ */
 export const COLORS = {
-  bgTop: 0x121a26,
-  bgBottom: 0x070a10,
-  ground: 0x131b27,
-  groundLine: 0x1d2836,
+  /** Sky, top of the screen to the horizon haze. */
+  skyTop: 0x2f78b4,
+  skyHorizon: 0xbcd6e8,
+  /** Bridge deck, near the camera and far up-field. */
+  deckNear: 0xb6bbbe,
+  deckFar: 0x8fa2b4,
+  /** Steel of the railings and the central divider. */
+  steel: 0x555f6b,
+  steelLit: 0x9aa6b4,
+  steelDark: 0x333b45,
+  /** Distant city. */
+  city: 0x4d6b8c,
+  /** What far-away things fade into. */
+  haze: 0xb4cee0,
+  bgTop: 0x2b6ea6,
+  bgBottom: 0x8fb4d0,
+  ground: 0x9a9992,
+  groundLine: 0x7d8894,
   danger: 0xff5a5a,
   soldierBlue: 0x5ea9ff,
   accentGreen: 0x7fd4a2,

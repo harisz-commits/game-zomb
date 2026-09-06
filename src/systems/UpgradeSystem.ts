@@ -8,6 +8,7 @@ import type {
   UpgradeFamily,
 } from '../types/game';
 import { UPGRADE_FAMILIES } from '../types/game';
+import { MAX_WEAPON_LEVEL, getWeaponTier, type WeaponTier } from '../data/weaponTiers';
 import type { SeededRandom } from '../utils/SeededRandom';
 import { DoctrineSystem, type DoctrineUnlock } from './DoctrineSystem';
 
@@ -105,6 +106,12 @@ export class UpgradeSystem {
    * downstream needs to know where a bonus came from.
    */
   private readonly bonusEffects: UpgradeEffects[] = [];
+  /**
+   * Weapon tier. Separate from the card pool on purpose: it is granted by
+   * weapon crates, it is capped, and above all it is the one upgrade the
+   * player can *see* - the gun in every soldier's hands changes with it.
+   */
+  private weaponLevel = 0;
   private mods: ModifierState = createBaseModifierState();
   private pool: UpgradeDefinition[];
 
@@ -117,6 +124,26 @@ export class UpgradeSystem {
 
   get modifiers(): ModifierState {
     return this.mods;
+  }
+
+  get weapon(): WeaponTier {
+    return getWeaponTier(this.weaponLevel);
+  }
+
+  get weaponIndex(): number {
+    return this.weaponLevel;
+  }
+
+  get weaponMaxed(): boolean {
+    return this.weaponLevel >= MAX_WEAPON_LEVEL;
+  }
+
+  /** Advances to the next weapon. Returns null when already at the top. */
+  upgradeWeapon(): WeaponTier | null {
+    if (this.weaponMaxed) return null;
+    this.weaponLevel++;
+    this.recompute();
+    return this.weapon;
   }
 
   getLevel(id: string): number {
@@ -242,6 +269,10 @@ export class UpgradeSystem {
     for (const effects of this.doctrines.collectEffects()) applyEffects(state, effects);
     for (const effects of this.bonusEffects) applyEffects(state, effects);
 
+    const weapon = getWeaponTier(this.weaponLevel);
+    state.damageMultiplier *= weapon.damageMultiplier;
+    state.fireRateMultiplier *= weapon.fireRateMultiplier;
+
     for (const family of UPGRADE_FAMILIES) {
       state.doctrineLevels[family] = this.doctrines.getLevel(family);
     }
@@ -252,6 +283,7 @@ export class UpgradeSystem {
   reset(): void {
     this.levels.clear();
     this.bonusEffects.length = 0;
+    this.weaponLevel = 0;
     this.doctrines.reset();
     this.mods = createBaseModifierState();
   }
