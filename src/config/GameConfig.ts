@@ -31,7 +31,7 @@ export const FIELD_PADDING_X = 46;
  * shoots. That trade-off - break the supply block, or hold the horde - is the
  * core decision of the game.
  */
-export const SUPPLY_LANE_RATIO = 0.42;
+export const SUPPLY_LANE_RATIO = 0.4;
 
 /**
  * How far off its own column a soldier may still engage a target.
@@ -48,10 +48,19 @@ export const WORLD_SCROLL_SPEED = 110;
 /**
  * Y of the front (top-most) formation row when the army is at rest.
  *
- * Sized so that a full 140-soldier block (10 rows) still fits above the bottom
- * edge of the field: 9 * FORMATION_ROW_SPACING + sprite height < 250.
+ * Set from the reference footage: the firing line sits at 73% of the screen
+ * height, leaving the bottom quarter as empty road behind the formation.
  */
-export const ARMY_BASE_Y = FIELD_H - 250;
+export const ARMY_BASE_Y = 825;
+
+/**
+ * Share of the visible width the bridge takes up at the firing line.
+ *
+ * The reference bridge does not run edge to edge - there is sky and city down
+ * both sides for the whole height of the screen, and that is a big part of why
+ * it reads as an elevated span rather than a corridor.
+ */
+export const FIELD_WIDTH_RATIO = 0.875;
 
 /* ------------------------------------------------------------ perspective --
  * The battlefield is drawn as a receding plane.
@@ -70,21 +79,22 @@ export const ARMY_BASE_Y = FIELD_H - 250;
 /**
  * World y of the vanishing point.
  *
- * Kept off-screen - an on-screen horizon would squeeze the spawn area into a
- * few unreadable pixels - but close enough that the deck narrows to about a
- * third of its width by the top of the field. That hard taper is what opens up
- * the sky and the city either side of the bridge.
+ * Taken from the reference, not invented: its two road edges intersect 2248 px
+ * above a 1918 px frame whose firing line sits at 0.73 of the height. Carried
+ * into these units that puts the vanishing point at -2380, which reproduces
+ * the reference taper exactly - 0.616 of the firing-line width at the top of
+ * the screen, 1.142 at the bottom.
  */
-export const HORIZON_Y = -560;
+export const HORIZON_Y = -2380;
 
 /** The row that renders at scale 1 - the army's front line. */
 export const DEPTH_ANCHOR_Y = ARMY_BASE_Y;
 
 /** Floor on the depth scale so distant enemies stay readable on small phones. */
-export const MIN_DEPTH_SCALE = 0.3;
+export const MIN_DEPTH_SCALE = 0.45;
 
 /** Distance above the army where the haze starts eating contrast. */
-export const FOG_START_Y = 300;
+export const FOG_START_Y = 340;
 /** Strongest haze alpha, reached at the top of the field. */
 export const FOG_MAX = 0.6;
 

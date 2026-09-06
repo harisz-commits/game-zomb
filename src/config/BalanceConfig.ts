@@ -7,7 +7,7 @@
 
 export const BALANCE = {
   // ---------------------------------------------------------------- army ---
-  STARTING_SOLDIERS: 6,
+  STARTING_SOLDIERS: 8,
   /** Army size that triggers a promotion. */
   PROMOTION_THRESHOLD: 140,
   /** Never let `Early Promotion` style upgrades push it below this. */
@@ -37,8 +37,13 @@ export const BALANCE = {
   SOLDIER_LERP: 12,
   KEYBOARD_SPEED: 620,
 
-  FORMATION_COL_SPACING: 30,
-  FORMATION_ROW_SPACING: 20,
+  /**
+   * Formation spacing at unit scale 1. Both are multiplied by the current
+   * sprite scale (see ArmySystem.unitScale), so a three-man squad stands
+   * shoulder to shoulder and a 140-strong block packs in tight.
+   */
+  FORMATION_COL_SPACING: 62,
+  FORMATION_ROW_SPACING: 36,
   /** Cap on formation width as a fraction of the field. */
   FORMATION_MAX_WIDTH_RATIO: 0.82,
 
@@ -66,8 +71,8 @@ export const BALANCE = {
   SUPPLY_FIRST_AT: 2,
   /** Vertical gap between blocks in the stack. */
   LANE_BLOCK_GAP: 10,
-  LANE_BIG_BLOCK_HEIGHT: 186,
-  LANE_FILLER_BLOCK_HEIGHT: 96,
+  LANE_BIG_BLOCK_HEIGHT: 240,
+  LANE_FILLER_BLOCK_HEIGHT: 92,
   LANE_BLOCK_WIDTH_RATIO: 0.88,
   /** Filler blocks appended behind each weapon block. */
   LANE_FILLER_COUNT: [3, 6] as [number, number],
@@ -79,7 +84,7 @@ export const BALANCE = {
    * line and waits indefinitely; the stack only advances when you break one.
    * The pressure to leave the lane comes from the horde, not from a timer.
    */
-  LANE_STACK_FRONT_OFFSET: 240,
+  LANE_STACK_FRONT_OFFSET: 260,
   /** Blocks slide into their new slot at this rate after one is broken. */
   LANE_STACK_SLIDE: 9,
   /** Keep at least this many blocks queued up. */
@@ -225,6 +230,7 @@ export const BALANCE = {
    * depth scale alone would shrink it into confetti.
    */
   ENEMY_VISUAL_SCALE: 1.35,
+  /** Enemy radius is a gameplay value; the visual scale must not move it. */
   ELITE_POINTS: 8,
   ELITE_SCORE: 50,
   SWARM_PACK_SIZE: [4, 7] as [number, number],
@@ -239,7 +245,7 @@ export const BALANCE = {
    * hotter than a full-width battlefield would need in order to keep the lane
    * looking packed.
    */
-  BASE_SPAWN_RATE: 3.4,
+  BASE_SPAWN_RATE: 2.6,
   /** Spawn budget grows linearly with this factor per second. */
   DIFFICULTY_SCALING: 0.032,
   /** Extra difficulty from a strong build - deliberately gentle. */

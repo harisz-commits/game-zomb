@@ -214,7 +214,11 @@ export class ArmySystem {
    * keeps roughly the same visual weight either way.
    */
   private get unitScale(): number {
-    return clamp(1.85 - this.soldiers.length / 130, 0.7, 1.85);
+    // Square-root falloff: the block's total footprint grows with the roster
+    // instead of exploding with it. The cap is set so a starting squad matches
+    // the reference's character size at the firing line; the floor keeps a
+    // full 140 readable.
+    return clamp(4.6 / Math.sqrt(Math.max(1, this.soldiers.length)), 0.55, 1.55);
   }
 
   /** Re-points the sprites at the current tier + weapon combination. */

@@ -258,8 +258,38 @@ roughly 90-130 of 140 soldiers with the horde at its entity cap.
 
 ### Perspective
 
-The battlefield is drawn as a receding plane. `Viewport` owns the projection
-and it is deliberately a **pure horizontal shear**:
+The battlefield is drawn as a receding plane, and its camera is matched to the
+reference footage rather than eyeballed. Measuring the two road edges in a
+920x1918 frame puts their intersection - the vanishing point - 2248 px above
+the top of the frame, with the firing line at 0.73 of the height. Carried into
+these units that is `HORIZON_Y = -2380` against an anchor at `ARMY_BASE_Y =
+825`, which reproduces these numbers, all verified against the running game:
+
+| | reference | game |
+|---|---|---|
+| deck width at the firing line | 0.875 of the screen | 0.875 |
+| deck width at the top of the screen | 0.527 | 0.539 |
+| depth scale at the top of the screen | 0.616 | 0.616 |
+| depth scale at the bottom | 1.142 | 1.142 |
+| firing line, down the screen | 0.730 | 0.730 |
+| central barrier, across the deck | 0.39 | 0.40 |
+| soldier body height | 0.13 of the screen | 0.127 |
+
+The bridge deliberately does not reach the edges of the screen
+(`FIELD_WIDTH_RATIO`): there is sky and city down both sides for the whole
+height, and that is a large part of why it reads as an elevated span rather
+than a corridor.
+
+Character size is matched at the firing line, where the depth scale is 1. A
+soldier's drawn body is 13% of the screen height at a starting squad's
+`unitScale`, which is what the reference squad measures; the scale then falls
+off as `4.6 / sqrt(count)` so a 140-strong block still fits on the deck. The
+horde is drawn at roughly 0.45 of a soldier's height, which is also what the
+reference does - it is not a consistent world scale, it is the convention that
+makes the player's squad read as heroic and the horde as a distant mass.
+
+`Viewport` owns the projection and it is deliberately a **pure horizontal
+shear**:
 
 ```
 depthScale(y) = (y - HORIZON_Y) / (DEPTH_ANCHOR_Y - HORIZON_Y)   // 1 at the army line

@@ -72,13 +72,16 @@ function bakeContactShadow(
 
 /* -------------------------------------------------------------- soldiers -- */
 
-const SOLDIER_W = 46;
-const SOLDIER_H = 66;
+const SOLDIER_W = 60;
+const SOLDIER_H = 162;
 
 /**
- * A soldier seen from behind and slightly above: boots, blue fatigues, a dark
- * plate carrier, a helmet, and the weapon of the current weapon tier held up
- * and forward.
+ * A soldier seen from behind and slightly above.
+ *
+ * Proportions come from the reference footage rather than from what is easy to
+ * draw: a figure roughly 1:3 wide to tall, firing line at the boots. At the
+ * firing line the drawn body works out to about 13% of the screen height and
+ * 9% of its width, which is what the reference squad measures.
  */
 function drawSoldier(
   g: Phaser.GameObjects.Graphics,
@@ -90,106 +93,114 @@ function drawSoldier(
   accent: number,
 ): void {
   const cx = SOLDIER_W / 2;
-  const vest = shade(body, 0.42);
-  const vestLit = shade(body, 0.62);
-  const bodyLit = shade(body, 1.28);
-  const bodyDark = shade(body, 0.72);
+  const vest = shade(body, 0.4);
+  const vestLit = shade(body, 0.6);
+  const bodyLit = shade(body, 1.3);
+  const bodyDark = shade(body, 0.7);
 
-  bakeContactShadow(g, cx, 60, 26);
+  bakeContactShadow(g, cx, 145, 40);
 
   // Boots
   g.fillStyle(0x2a2119, 1);
-  g.fillRect(cx - 11, 50, 9, 8);
-  g.fillRect(cx + 2, 50, 9, 8);
-  g.fillStyle(0x40332a, 1);
-  g.fillRect(cx - 11, 50, 9, 2);
-  g.fillRect(cx + 2, 50, 9, 2);
+  g.fillRect(cx - 18, 122, 16, 18);
+  g.fillRect(cx + 2, 122, 16, 18);
+  g.fillStyle(0x453629, 1);
+  g.fillRect(cx - 18, 122, 16, 4);
+  g.fillRect(cx + 2, 122, 16, 4);
 
   // Legs
   g.fillStyle(body, 1);
-  g.fillRect(cx - 10, 35, 8, 16);
-  g.fillRect(cx + 2, 35, 8, 16);
-  g.fillStyle(bodyDark, 1);
-  g.fillRect(cx + 8, 35, 2, 16);
+  g.fillRect(cx - 17, 78, 15, 46);
+  g.fillRect(cx + 2, 78, 15, 46);
   g.fillStyle(bodyLit, 1);
-  g.fillRect(cx - 10, 35, 2, 16);
+  g.fillRect(cx - 17, 78, 4, 46);
+  g.fillStyle(bodyDark, 1);
+  g.fillRect(cx + 13, 78, 4, 46);
+  // Knee pads on higher tiers
+  if (visual >= 2) {
+    g.fillStyle(vest, 1);
+    g.fillRect(cx - 17, 98, 15, 8);
+    g.fillRect(cx + 2, 98, 15, 8);
+  }
 
   // Belt
   g.fillStyle(0x241f1a, 1);
-  g.fillRect(cx - 11, 32, 22, 5);
-  g.fillStyle(accent, 0.7);
-  g.fillRect(cx - 4, 33, 8, 3);
+  g.fillRect(cx - 20, 72, 40, 10);
+  g.fillStyle(accent, 0.75);
+  g.fillRect(cx - 7, 74, 14, 6);
 
-  // Arms (fatigues), reaching forward around the weapon
+  // Arms
   g.fillStyle(body, 1);
-  g.fillRect(cx - 15, 20, 6, 14);
-  g.fillRect(cx + 9, 18, 6, 14);
+  g.fillRect(cx - 27, 40, 11, 34);
+  g.fillRect(cx + 16, 36, 11, 34);
   g.fillStyle(bodyLit, 1);
-  g.fillRect(cx - 15, 20, 2, 14);
+  g.fillRect(cx - 27, 40, 4, 34);
+  g.fillStyle(0x3a3128, 1);
+  g.fillRect(cx - 27, 66, 11, 9); // gloves
+  g.fillRect(cx + 16, 62, 11, 9);
 
   // Plate carrier
   g.fillStyle(vest, 1);
-  g.fillRect(cx - 11, 16, 22, 18);
+  g.fillRect(cx - 20, 34, 40, 40);
   g.fillStyle(vestLit, 1);
-  g.fillRect(cx - 11, 16, 3, 18);
-  g.fillStyle(shade(body, 0.3), 1);
-  g.fillRect(cx + 8, 16, 3, 18);
+  g.fillRect(cx - 20, 34, 7, 40);
+  g.fillStyle(shade(body, 0.28), 1);
+  g.fillRect(cx + 14, 34, 6, 40);
 
   // Pack and webbing - detail grows with tier
   g.fillStyle(shade(body, 0.5), 1);
-  g.fillRect(cx - 8, 19, 16, 11);
+  g.fillRect(cx - 14, 40, 28, 26);
   g.fillStyle(accent, 0.85);
-  g.fillRect(cx - 8, 22, 16, 2);
+  g.fillRect(cx - 14, 45, 28, 4);
   if (visual >= 2) {
     g.fillStyle(accent, 0.7);
-    g.fillRect(cx - 8, 27, 16, 2);
+    g.fillRect(cx - 14, 57, 28, 4);
   }
   if (visual >= 4) {
     g.fillStyle(accent, 0.9);
-    g.fillRect(cx - 1, 19, 2, 11);
+    g.fillRect(cx - 2, 40, 4, 26);
   }
 
   // Shoulders
   g.fillStyle(vestLit, 1);
-  g.fillRect(cx - 14, 15, 28, 4);
-  g.fillStyle(shade(body, 0.34), 1);
-  g.fillRect(cx - 14, 18, 28, 2);
+  g.fillRect(cx - 24, 32, 48, 8);
+  g.fillStyle(shade(body, 0.32), 1);
+  g.fillRect(cx - 24, 38, 48, 4);
 
   // Neck and head
+  g.fillStyle(0xb98a63, 1);
+  g.fillRect(cx - 8, 26, 16, 10);
   g.fillStyle(0xc79a72, 1);
-  g.fillRect(cx - 4, 11, 8, 6);
+  g.fillRect(cx - 10, 14, 20, 14);
+  g.fillStyle(0xd9ae86, 1);
+  g.fillRect(cx - 10, 14, 7, 14);
 
   // Helmet
   g.fillStyle(helmet, 1);
-  g.fillRect(cx - 8, 4, 16, 9);
+  g.fillRect(cx - 13, 2, 26, 16);
   g.fillStyle(shade(helmet, 2.1), 1);
-  g.fillRect(cx - 8, 4, 16, 3);
+  g.fillRect(cx - 13, 2, 26, 5);
   g.fillStyle(shade(helmet, 1.5), 1);
-  g.fillRect(cx - 8, 4, 4, 9);
-  g.fillStyle(shade(helmet, 0.6), 1);
-  g.fillRect(cx - 8, 11, 16, 2);
-  g.fillStyle(accent, 0.9);
-  if (visual >= 1) g.fillRect(cx + 4, 6, 3, 4);
+  g.fillRect(cx - 13, 2, 7, 16);
+  g.fillStyle(shade(helmet, 0.55), 1);
+  g.fillRect(cx - 13, 16, 26, 4);
+  if (visual >= 1) {
+    g.fillStyle(accent, 0.9);
+    g.fillRect(cx + 7, 7, 5, 7); // comms
+  }
   if (visual >= 3) {
     g.fillStyle(0x1a1d24, 1);
-    g.fillRect(cx - 8, 10, 16, 3); // balaclava / neck guard
+    g.fillRect(cx - 11, 18, 22, 7); // neck guard
   }
   if (visual >= 5) {
     g.fillStyle(accent, 0.95);
-    g.fillRect(cx - 9, 4, 2, 7);
-    g.fillRect(cx + 7, 4, 2, 7);
+    g.fillRect(cx - 15, 2, 3, 13);
+    g.fillRect(cx + 12, 2, 3, 13);
   }
 
-  drawHeldWeapon(g, cx + 13, weapon, gunColor, accent);
+  drawHeldWeapon(g, cx + 26, weapon, gunColor, accent);
 }
 
-/**
- * The weapon in a soldier's hands, pointing up-field.
- *
- * `x` is the barrel centre. Each tier is a clearly different silhouette -
- * longer, thicker, more hardware - so a weapon upgrade is legible at sprite
- * size without reading a single number.
- */
 function drawHeldWeapon(
   g: Phaser.GameObjects.Graphics,
   x: number,
@@ -211,46 +222,46 @@ function drawHeldWeapon(
     g.fillRect(px, py, w, h);
   };
 
-  const barrelTop = [6, 5, 3, 2, 1, 1][weapon] ?? 6;
-  const barrelW = [4, 4, 5, 5, 6, 8][weapon] ?? 4;
+  const barrelTop = [16, 13, 9, 6, 3, 3][weapon] ?? 16;
+  const barrelW = [8, 9, 10, 11, 13, 17][weapon] ?? 8;
 
   // Barrel, running up past the shoulder, with a hot muzzle tip.
-  part(x - barrelW / 2, barrelTop, barrelW, 21 - barrelTop);
+  part(x - barrelW / 2, barrelTop, barrelW, 52 - barrelTop);
   g.fillStyle(accent, 0.95);
-  g.fillRect(x - barrelW / 2, barrelTop, barrelW, 3);
+  g.fillRect(x - barrelW / 2, barrelTop, barrelW, 6);
 
   // Receiver and grip
-  part(x - 5, 21, 11, 10);
-  part(x - 4, 30, 5, 6);
+  part(x - 11, 52, 23, 22);
+  part(x - 9, 72, 11, 14);
 
   switch (weapon) {
     case 0:
       break;
     case 1:
-      part(x - 7, 27, 6, 9); // magazine
+      part(x - 15, 66, 13, 20); // magazine
       break;
     case 2:
-      part(x - 8, 27, 7, 10);
-      part(x - 4, 15, 9, 4); // optic
+      part(x - 17, 66, 15, 22);
+      part(x - 9, 38, 19, 9); // optic
       break;
     case 3:
-      part(x - 9, 26, 10, 12); // drum
-      part(x - 5, 12, 11, 4);
+      part(x - 19, 64, 21, 26); // drum
+      part(x - 11, 32, 23, 9);
       break;
     case 4:
-      part(x - 10, 25, 12, 14); // box mag
-      part(x - 7, 9, 14, 4);
-      part(x - 6, 1, 3, 9); // bipod
-      part(x + 4, 1, 3, 9);
+      part(x - 21, 61, 25, 30); // box mag
+      part(x - 15, 24, 29, 9);
+      part(x - 13, 6, 6, 20); // bipod
+      part(x + 8, 6, 6, 20);
       break;
     default:
       // Minigun: a barrel cluster and a heavy housing.
-      part(x - 11, 20, 15, 16);
+      part(x - 23, 50, 32, 36);
       for (let i = 0; i < 4; i++) {
-        part(x - 8 + i * 4, 1, 3, 20, i % 2 === 0 ? gunColor : shade(gunColor, 1.8));
+        part(x - 17 + i * 9, 4, 6, 48, i % 2 === 0 ? gunColor : shade(gunColor, 1.8));
       }
       g.fillStyle(accent, 0.95);
-      g.fillRect(x - 11, 20, 15, 3);
+      g.fillRect(x - 23, 50, 32, 7);
       break;
   }
 }
@@ -396,49 +407,49 @@ function drawZombieBody(
 }
 
 function drawWalker(g: Phaser.GameObjects.Graphics): void {
-  bakeContactShadow(g, 18, 51, 20);
-  drawZombieBody(g, 18, 1, 0x5f6455, ZOMBIE_SKIN);
+  bakeContactShadow(g, 25, 70, 26);
+  drawZombieBody(g, 25, 1.37, 0x5f6455, ZOMBIE_SKIN);
 }
 
 function drawRunner(g: Phaser.GameObjects.Graphics): void {
-  bakeContactShadow(g, 17, 48, 19);
-  drawZombieBody(g, 17, 0.94, 0x4f6166, ZOMBIE_SKIN_LIT);
+  bakeContactShadow(g, 23, 66, 24);
+  drawZombieBody(g, 23, 1.29, 0x4f6166, ZOMBIE_SKIN_LIT);
   // A torn red band, so "the fast one" is legible at a glance.
   g.fillStyle(0xc4564a, 1);
-  g.fillRect(8, 19, 18, 4);
+  g.fillRect(10, 26, 26, 5);
 }
 
 function drawArmored(g: Phaser.GameObjects.Graphics): void {
-  bakeContactShadow(g, 21, 55, 23);
-  drawZombieBody(g, 21, 1.08, 0x4b5460, ZOMBIE_SKIN);
+  bakeContactShadow(g, 28, 76, 30);
+  drawZombieBody(g, 28, 1.48, 0x4b5460, ZOMBIE_SKIN);
   // Riot plates strapped over the chest.
   g.fillStyle(0x8e9aa6, 1);
-  g.fillRect(10, 18, 23, 8);
-  g.fillRect(10, 28, 23, 7);
+  g.fillRect(13, 25, 32, 11);
+  g.fillRect(13, 39, 32, 10);
   g.fillStyle(0xc7d2dd, 1);
-  g.fillRect(10, 18, 23, 2);
-  g.fillRect(10, 28, 23, 2);
+  g.fillRect(13, 25, 32, 3);
+  g.fillRect(13, 39, 32, 3);
   g.fillStyle(0x646f7b, 1);
-  g.fillRect(13, 2, 17, 7); // helmet
+  g.fillRect(17, 3, 24, 10); // helmet
   g.fillStyle(0xaeb9c4, 1);
-  g.fillRect(13, 2, 17, 2);
+  g.fillRect(17, 3, 24, 3);
   g.fillStyle(0x2b323a, 0.75);
-  g.fillRect(13, 8, 17, 4); // visor
+  g.fillRect(17, 12, 24, 6); // visor
 }
 
 function drawSwarmer(g: Phaser.GameObjects.Graphics): void {
-  bakeContactShadow(g, 13, 38, 14);
-  drawZombieBody(g, 13, 0.72, 0x6d6a52, ZOMBIE_SKIN_LIT);
+  bakeContactShadow(g, 18, 51, 19);
+  drawZombieBody(g, 18, 0.99, 0x6d6a52, ZOMBIE_SKIN_LIT);
 }
 
 function drawSpitter(g: Phaser.GameObjects.Graphics): void {
-  bakeContactShadow(g, 18, 51, 20);
-  drawZombieBody(g, 18, 1, 0x5f6b45, 0xa9c081);
+  bakeContactShadow(g, 25, 70, 26);
+  drawZombieBody(g, 25, 1.37, 0x5f6b45, 0xa9c081);
   // Swollen acid sac on the chest.
   g.fillStyle(0xb9e05f, 0.9);
-  g.fillRect(12, 21, 12, 9);
+  g.fillRect(16, 29, 17, 13);
   g.fillStyle(0xe4ff8a, 0.9);
-  g.fillRect(12, 21, 12, 3);
+  g.fillRect(16, 29, 17, 4);
 }
 
 /** A brute: same plan, twice the mass, heavy apron and a bare head. */
@@ -502,31 +513,31 @@ function drawHeavy(
 }
 
 function drawBrute(g: Phaser.GameObjects.Graphics): void {
-  bakeContactShadow(g, 33, 76, 38);
-  drawHeavy(g, 33, 0.85, 0x8a7460, 0xb08b74);
+  bakeContactShadow(g, 42, 104, 50);
+  drawHeavy(g, 42, 1.15, 0x8a7460, 0xb08b74);
 }
 
 function drawCrusher(g: Phaser.GameObjects.Graphics): void {
-  bakeContactShadow(g, 60, 138, 74);
-  drawHeavy(g, 60, 1.5, 0x7d6c58, 0xb98f74);
+  bakeContactShadow(g, 67, 176, 92);
+  drawHeavy(g, 67, 1.9, 0x7d6c58, 0xb98f74);
   // Riveted plate over one shoulder marks it out as the boss.
   g.fillStyle(0x8b96a2, 1);
-  g.fillRect(14, 44, 30, 16);
+  g.fillRect(14, 56, 38, 20);
   g.fillStyle(0xc3ced9, 1);
-  g.fillRect(14, 44, 30, 4);
+  g.fillRect(14, 56, 38, 5);
 }
 
 function drawAbomination(g: Phaser.GameObjects.Graphics): void {
-  bakeContactShadow(g, 54, 122, 68);
-  drawHeavy(g, 54, 1.32, 0x5d7049, 0x89a76a);
+  bakeContactShadow(g, 60, 158, 84);
+  drawHeavy(g, 60, 1.7, 0x5d7049, 0x89a76a);
   // Bulging growths, the thing the phase transitions are named after.
   g.fillStyle(0xb4d47c, 0.9);
-  g.fillRect(20, 46, 22, 20);
-  g.fillRect(62, 60, 24, 22);
-  g.fillRect(40, 78, 18, 16);
+  g.fillRect(22, 58, 28, 26);
+  g.fillRect(70, 76, 30, 28);
+  g.fillRect(46, 100, 23, 20);
   g.fillStyle(0xd9ff9a, 0.9);
-  g.fillRect(20, 46, 22, 5);
-  g.fillRect(62, 60, 24, 5);
+  g.fillRect(22, 58, 28, 6);
+  g.fillRect(70, 76, 30, 6);
 }
 
 /* ------------------------------------------------------------------ fx --- */
@@ -636,14 +647,14 @@ export function generateTextures(scene: Phaser.Scene): void {
   }
 
   // Heights include the baked contact shadow at the bottom of each sprite.
-  makeTexture(scene, 'zombie_walker', 36, 55, drawWalker);
-  makeTexture(scene, 'zombie_runner', 34, 52, drawRunner);
-  makeTexture(scene, 'zombie_brute', 66, 80, drawBrute);
-  makeTexture(scene, 'zombie_armored', 42, 59, drawArmored);
-  makeTexture(scene, 'zombie_swarmer', 26, 41, drawSwarmer);
-  makeTexture(scene, 'zombie_spitter', 36, 55, drawSpitter);
-  makeTexture(scene, 'boss_crusher', 120, 142, drawCrusher);
-  makeTexture(scene, 'boss_abomination', 108, 126, drawAbomination);
+  makeTexture(scene, 'zombie_walker', 50, 76, drawWalker);
+  makeTexture(scene, 'zombie_runner', 46, 72, drawRunner);
+  makeTexture(scene, 'zombie_brute', 86, 112, drawBrute);
+  makeTexture(scene, 'zombie_armored', 56, 82, drawArmored);
+  makeTexture(scene, 'zombie_swarmer', 36, 56, drawSwarmer);
+  makeTexture(scene, 'zombie_spitter', 50, 76, drawSpitter);
+  makeTexture(scene, 'boss_crusher', 136, 188, drawCrusher);
+  makeTexture(scene, 'boss_abomination', 122, 170, drawAbomination);
 
   makeTexture(scene, TEX.pixel, 4, 4, (g) => {
     g.fillStyle(0xffffff, 1);

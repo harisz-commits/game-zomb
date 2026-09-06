@@ -3,6 +3,7 @@ import {
   DEPTH_ANCHOR_Y,
   FIELD_H,
   FIELD_W,
+  FIELD_WIDTH_RATIO,
   FOG_MAX,
   FOG_START_Y,
   HORIZON_Y,
@@ -14,6 +15,11 @@ import { clamp } from '../utils/MathUtils';
 const MAX_ZOOM = 1.35;
 /** How far the play field may widen on landscape/ultra-wide screens. */
 const MAX_FIELD_WIDTH = FIELD_W * 2.2;
+/**
+ * Visible width the field is sized against. The bridge deliberately does not
+ * reach the edges of the screen - see FIELD_WIDTH_RATIO.
+ */
+const TARGET_VISIBLE_W = FIELD_W / FIELD_WIDTH_RATIO;
 
 /**
  * Maps the fixed virtual play field onto any canvas size.
@@ -80,13 +86,19 @@ export class Viewport {
     const zoomByHeight = this.canvasHeight / FIELD_H;
     const widthAtHeightZoom = this.canvasWidth / zoomByHeight;
 
-    if (widthAtHeightZoom >= FIELD_W) {
-      // Landscape-ish: fit the height, widen the field with the spare width.
+    if (widthAtHeightZoom >= TARGET_VISIBLE_W) {
+      // Landscape-ish: fit the height, widen the field with the spare width -
+      // still keeping the sky margin down both sides.
       this.zoom = Math.min(zoomByHeight, MAX_ZOOM);
-      this.fieldWidth = clamp(this.canvasWidth / this.zoom, FIELD_W, MAX_FIELD_WIDTH);
+      this.fieldWidth = clamp(
+        (this.canvasWidth / this.zoom) * FIELD_WIDTH_RATIO,
+        FIELD_W,
+        MAX_FIELD_WIDTH,
+      );
     } else {
-      // Very narrow portrait: fit the width, spare height becomes approach lane.
-      this.zoom = Math.min(this.canvasWidth / FIELD_W, MAX_ZOOM);
+      // Portrait: fit the bridge plus its margins to the width; spare height
+      // becomes approach lane at the top.
+      this.zoom = Math.min(this.canvasWidth / TARGET_VISIBLE_W, MAX_ZOOM);
       this.fieldWidth = FIELD_W;
     }
 
